@@ -1,0 +1,18 @@
+const mongoose = require('mongoose');
+
+const farmEventSchema = new mongoose.Schema({
+  farmerId: { type: String, required: true },
+  deviceId: { type: String, required: true },
+  title: { type: String, required: true },
+  type: {
+    type: String,
+    enum: ['sowing', 'fertilizing', 'irrigation_check', 'harvest', 'custom'],
+    default: 'custom'
+  },
+  eventDate: { type: Date, required: true },
+  notes: { type: String },
+  completed: { type: Boolean, default: false },
+  createdAt: { type: Date, default: Date.now }
+});
+
+module.exports = mongoose.model('FarmEvent', farmEventSchema);
