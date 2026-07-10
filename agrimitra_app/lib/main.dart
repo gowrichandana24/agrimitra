@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
 import 'login_screen.dart';
 import 'calendar_screen.dart';
+import 'theme.dart';
+import 'widgets/moisture_gauge.dart';
 
 void main() {
   runApp(const AgriMitraApp());
@@ -19,7 +21,7 @@ class AgriMitraApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'AgriMitra',
-      theme: ThemeData(primarySwatch: Colors.green),
+      theme: AgriMitraTheme.theme,
       home: const LoginScreen(),
     );
   }
@@ -222,8 +224,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   Text('Device: ${sensorData!['deviceId']}',
                       style: const TextStyle(fontSize: 18)),
                   const SizedBox(height: 12),
-                  Text('Soil moisture: ${sensorData!['moisture']}%',
-                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  MoistureGauge(moisture: (sensorData!['moisture'] as num).toDouble()),
                   const SizedBox(height: 8),
                   Text('Temperature: ${sensorData!['temperature']}°C',
                       style: const TextStyle(fontSize: 18)),

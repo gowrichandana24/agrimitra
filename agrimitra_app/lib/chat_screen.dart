@@ -22,21 +22,50 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController controller = TextEditingController();
   final List<ChatMessage> messages = [];
   bool isLoading = false;
+  bool isLoadingHistory = true;
 
   final stt.SpeechToText speech = stt.SpeechToText();
   final FlutterTts tts = FlutterTts();
   bool isListening = false;
   bool speechAvailable = false;
   bool autoSpeak = false;
-  bool isSpeaking = false; // NEW: tracks whether TTS is currently playing
+  bool isSpeaking = false;
 
   final String chatUrl = "http://localhost:5000/api/chat/esp32-01/ask";
+  final String historyUrl = "http://localhost:5000/api/chat/history";
 
   @override
   void initState() {
     super.initState();
     initSpeech();
     initTts();
+    loadChatHistory();
+  }
+
+  Future<void> loadChatHistory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      final response = await http.get(
+        Uri.parse(historyUrl),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          messages.addAll(data.map((m) => ChatMessage(
+                text: m['text'],
+                isUser: m['role'] == 'user',
+              )));
+        });
+      }
+    } catch (e) {
+      print('Failed to load chat history: $e');
+    } finally {
+      setState(() => isLoadingHistory = false);
+    }
   }
 
   Future<void> initSpeech() async {
@@ -52,8 +81,6 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void initTts() {
-    // NEW: these callbacks keep isSpeaking accurate, including when
-    // speech finishes naturally (not just when stopped manually)
     tts.setStartHandler(() {
       setState(() => isSpeaking = true);
     });
@@ -97,7 +124,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> stopSpeaking() async {
     await tts.stop();
-    setState(() => isSpeaking = false); // in case the platform doesn't fire cancelHandler
+    setState(() => isSpeaking = false);
   }
 
   Future<void> sendMessage() async {
@@ -112,16 +139,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-final token = prefs.getString('token');
+      final token = prefs.getString('token');
 
-final response = await http.post(
-  Uri.parse(chatUrl),
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Bearer $token',
-  },
-  body: jsonEncode({'question': question}),
-);
+      final response = await http.post(
+        Uri.parse(chatUrl),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'question': question}),
+      );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -132,11 +159,13 @@ final response = await http.post(
           speakText(data['answer']);
         }
       } else {
+        print('Chat request failed: ${response.statusCode} - ${response.body}');
         setState(() {
           messages.add(ChatMessage(text: "Something went wrong. Try again.", isUser: false));
         });
       }
     } catch (e) {
+      print('Chat request exception: $e');
       setState(() {
         messages.add(ChatMessage(text: "Error: $e", isUser: false));
       });
@@ -160,6 +189,8 @@ final response = await http.post(
       ),
       body: Column(
         children: [
+          if (isLoadingHistory)
+            const LinearProgressIndicator(),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(16),
@@ -185,8 +216,6 @@ final response = await http.post(
                         Flexible(child: Text(msg.text)),
                         if (!msg.isUser) ...[
                           const SizedBox(width: 6),
-                          // NEW: shows a stop icon instead of speaker icon
-                          // while this is actively being spoken
                           GestureDetector(
                             onTap: () {
                               if (isSpeaking) {

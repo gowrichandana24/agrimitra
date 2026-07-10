@@ -3,6 +3,8 @@ const router = express.Router();
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const Farmer = require('../models/Farmer');
+const verifyToken = require('../middleware/auth');
+const { generateCropCalendar } = require('../services/calendarAutoGen');
 
 // Register a new farmer
 router.post('/register', async (req, res) => {
@@ -58,6 +60,65 @@ router.post('/login', async (req, res) => {
       message: 'Login successful',
       token,
       farmer: { id: farmer._id, name: farmer.name, farmName: farmer.farmName }
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+// Update farm profile (crop + planting date) — this auto-regenerates the calendar
+router.patch('/profile', verifyToken, async (req, res) => {
+  try {
+    const { currentCrop, plantingDate, deviceId } = req.body;
+
+    if (!currentCrop || !plantingDate) {
+      return res.status(400).json({ message: 'currentCrop and plantingDate are required' });
+    }
+
+    const farmer = await Farmer.findByIdAndUpdate(
+      req.farmerId,
+      { currentCrop, plantingDate: new Date(plantingDate) },
+      { new: true }
+    );
+
+    if (!farmer) {
+      return res.status(404).json({ message: 'Farmer not found' });
+    }
+
+    const events = await generateCropCalendar(
+      req.farmerId,
+      deviceId || 'esp32-01',
+      currentCrop,
+      plantingDate
+    );
+
+    res.json({
+      message: 'Profile updated and calendar generated',
+      farmer: { currentCrop: farmer.currentCrop, plantingDate: farmer.plantingDate },
+      generatedEvents: events.length
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+});
+
+// Get current farm profile, including computed growth status
+router.get('/profile', verifyToken, async (req, res) => {
+  try {
+    const farmer = await Farmer.findById(req.farmerId);
+    if (!farmer) return res.status(404).json({ message: 'Farmer not found' });
+
+    let growthStatus = null;
+    if (farmer.currentCrop && farmer.plantingDate) {
+      const { computeGrowthStatus } = require('../services/cropKnowledge');
+      growthStatus = computeGrowthStatus(farmer.currentCrop, farmer.plantingDate);
+    }
+
+    res.json({
+      name: farmer.name,
+      farmName: farmer.farmName,
+      currentCrop: farmer.currentCrop,
+      plantingDate: farmer.plantingDate,
+      growthStatus
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });

@@ -5,6 +5,8 @@ const farmerSchema = new mongoose.Schema({
   phone: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
   farmName: { type: String },
+  currentCrop: { type: String, default: null },
+  plantingDate: { type: Date, default: null },
   location: {
     lat: { type: Number, default: 12.9716 },
     lon: { type: Number, default: 77.5946 }

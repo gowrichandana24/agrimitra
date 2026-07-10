@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'crop_setup_screen.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -11,16 +13,20 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
-  List<dynamic> events = [];
+  List<dynamic> allEvents = [];
+  Map<String, dynamic>? profile;
   bool isLoading = true;
 
-  final String upcomingUrl = "http://localhost:5000/api/calendar/esp32-01/upcoming";
+  DateTime focusedDay = DateTime.now();
+  DateTime? selectedDay;
+
+  final String allEventsUrl = "http://localhost:5000/api/calendar/esp32-01/all";
   final String createUrl = "http://localhost:5000/api/calendar";
 
   final titleController = TextEditingController();
   final notesController = TextEditingController();
   String selectedType = 'custom';
-  DateTime selectedDate = DateTime.now().add(const Duration(days: 1));
+  DateTime newEventDate = DateTime.now().add(const Duration(days: 1));
 
   final Map<String, String> typeLabels = {
     'sowing': 'Sowing',
@@ -33,6 +39,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   @override
   void initState() {
     super.initState();
+    selectedDay = DateTime.now();
+    fetchProfile();
     fetchEvents();
   }
 
@@ -42,21 +50,50 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'};
   }
 
+  Future<void> fetchProfile() async {
+    try {
+      final headers = await getAuthHeaders();
+      final response = await http.get(
+        Uri.parse('http://localhost:5000/api/auth/profile'),
+        headers: headers,
+      );
+      if (response.statusCode == 200) {
+        setState(() {
+          profile = jsonDecode(response.body);
+        });
+      }
+    } catch (e) {
+      // fail silently
+    }
+  }
+
   Future<void> fetchEvents() async {
     setState(() => isLoading = true);
     try {
       final headers = await getAuthHeaders();
-      final response = await http.get(Uri.parse(upcomingUrl), headers: headers);
+      final response = await http.get(Uri.parse(allEventsUrl), headers: headers);
       if (response.statusCode == 200) {
         setState(() {
-          events = jsonDecode(response.body);
+          allEvents = jsonDecode(response.body);
         });
       }
     } catch (e) {
-      // silently fail for now, list just stays empty
+      // silently fail for now
     } finally {
       setState(() => isLoading = false);
     }
+  }
+
+  // Normalizes a date to just year/month/day, so time-of-day differences
+  // don't break matching events to calendar cells.
+  DateTime normalize(DateTime d) => DateTime(d.year, d.month, d.day);
+
+  List<dynamic> eventsForDay(DateTime day) {
+    final target = normalize(day);
+    return allEvents.where((e) {
+      final eventDate = normalize(DateTime.parse(e['eventDate']).toLocal());
+      return eventDate == target;
+    }).toList();
   }
 
   Future<void> addEvent() async {
@@ -71,7 +108,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
           'deviceId': 'esp32-01',
           'title': titleController.text.trim(),
           'type': selectedType,
-          'eventDate': selectedDate.toIso8601String(),
+          'eventDate': newEventDate.toIso8601String(),
           'notes': notesController.text.trim(),
         }),
       );
@@ -79,7 +116,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       if (response.statusCode == 201) {
         titleController.clear();
         notesController.clear();
-        if (mounted) Navigator.pop(context); // close the add-event sheet
+        if (mounted) Navigator.pop(context);
         fetchEvents();
       }
     } catch (e) {
@@ -101,6 +138,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   void showAddEventSheet() {
+    newEventDate = selectedDay ?? DateTime.now();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -132,16 +170,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
               const SizedBox(height: 12),
               ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text('Date: ${selectedDate.toLocal().toString().split(' ')[0]}'),
+                title: Text('Date: ${newEventDate.toLocal().toString().split(' ')[0]}'),
                 trailing: const Icon(Icons.calendar_today),
                 onTap: () async {
                   final picked = await showDatePicker(
                     context: context,
-                    initialDate: selectedDate,
-                    firstDate: DateTime.now(),
+                    initialDate: newEventDate,
+                    firstDate: DateTime.now().subtract(const Duration(days: 30)),
                     lastDate: DateTime.now().add(const Duration(days: 365)),
                   );
-                  if (picked != null) setSheetState(() => selectedDate = picked);
+                  if (picked != null) setSheetState(() => newEventDate = picked);
                 },
               ),
               const SizedBox(height: 12),
@@ -172,8 +210,77 @@ class _CalendarScreenState extends State<CalendarScreen> {
     }
   }
 
+  Color colorForType(String type) {
+    switch (type) {
+      case 'sowing': return Colors.brown;
+      case 'fertilizing': return Colors.purple;
+      case 'irrigation_check': return Colors.blue;
+      case 'harvest': return Colors.orange;
+      default: return Colors.green;
+    }
+  }
+
+  Widget buildGrowthStatusBanner() {
+    if (profile == null || profile!['currentCrop'] == null) {
+      return Card(
+        margin: const EdgeInsets.all(12),
+        child: ListTile(
+          leading: const Icon(Icons.add_circle_outline, color: Colors.green),
+          title: const Text('No crop set yet'),
+          subtitle: const Text('Tap to tell us what you\'re growing'),
+          onTap: () async {
+            final result = await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const CropSetupScreen()),
+            );
+            if (result == true) {
+              fetchProfile();
+              fetchEvents();
+            }
+          },
+        ),
+      );
+    }
+
+    final status = profile!['growthStatus'];
+    return Card(
+      margin: const EdgeInsets.all(12),
+      color: Colors.green.shade50,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.eco, color: Colors.green),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${profile!['currentCrop']} — ${status?['stage'] ?? ''} stage, ${status?['daysToHarvest'] ?? '?'} days to harvest',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            TextButton(
+              onPressed: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CropSetupScreen()),
+                );
+                if (result == true) {
+                  fetchProfile();
+                  fetchEvents();
+                }
+              },
+              child: const Text('Change'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final dayEvents = eventsForDay(selectedDay ?? DateTime.now());
+
     return Scaffold(
       appBar: AppBar(title: const Text('Farm Calendar')),
       floatingActionButton: FloatingActionButton(
@@ -182,35 +289,88 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : events.isEmpty
-              ? const Center(child: Text('No upcoming events — tap + to add one'))
-              : RefreshIndicator(
-                  onRefresh: fetchEvents,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(12),
-                    itemCount: events.length,
-                    itemBuilder: (context, index) {
-                      final event = events[index];
-                      final date = DateTime.parse(event['eventDate']).toLocal();
-                      final dateStr = "${date.day}/${date.month}/${date.year}";
-
-                      return Card(
-                        child: ListTile(
-                          leading: Icon(iconForType(event['type']), color: Colors.green),
-                          title: Text(event['title']),
-                          subtitle: Text(
-                            '$dateStr${event['notes'] != null && event['notes'].toString().isNotEmpty ? ' — ${event['notes']}' : ''}',
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.check_circle_outline),
-                            tooltip: 'Mark as done',
-                            onPressed: () => markComplete(event['_id']),
-                          ),
-                        ),
-                      );
+          : SingleChildScrollView(
+              child: Column(
+                children: [
+                  buildGrowthStatusBanner(),
+                  TableCalendar(
+                    firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                    lastDay: DateTime.now().add(const Duration(days: 365)),
+                    focusedDay: focusedDay,
+                    selectedDayPredicate: (day) => isSameDay(selectedDay, day),
+                    eventLoader: eventsForDay,
+                    calendarFormat: CalendarFormat.month,
+                    onDaySelected: (selected, focused) {
+                      setState(() {
+                        selectedDay = selected;
+                        focusedDay = focused;
+                      });
                     },
+                    calendarStyle: const CalendarStyle(
+                      todayDecoration: BoxDecoration(color: Colors.green, shape: BoxShape.circle),
+                      selectedDecoration: BoxDecoration(color: Colors.brown, shape: BoxShape.circle),
+                      markerDecoration: BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+                      markersMaxCount: 3,
+                    ),
+                    headerStyle: const HeaderStyle(
+                      formatButtonVisible: false,
+                      titleCentered: true,
+                    ),
                   ),
-                ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        selectedDay != null
+                            ? "${selectedDay!.day}/${selectedDay!.month}/${selectedDay!.year}"
+                            : "Select a day",
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ),
+                  dayEvents.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('No events on this day'),
+                        )
+                      : ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          itemCount: dayEvents.length,
+                          itemBuilder: (context, index) {
+                            final event = dayEvents[index];
+                            final isCompleted = event['completed'] == true;
+                            return Card(
+                              child: ListTile(
+                                leading: Icon(iconForType(event['type']), color: colorForType(event['type'])),
+                                title: Text(
+                                  event['title'],
+                                  style: TextStyle(
+                                    decoration: isCompleted ? TextDecoration.lineThrough : null,
+                                    color: isCompleted ? Colors.grey : null,
+                                  ),
+                                ),
+                                subtitle: event['notes'] != null && event['notes'].toString().isNotEmpty
+                                    ? Text(event['notes'])
+                                    : null,
+                                trailing: isCompleted
+                                    ? const Icon(Icons.check_circle, color: Colors.green)
+                                    : IconButton(
+                                        icon: const Icon(Icons.check_circle_outline),
+                                        tooltip: 'Mark as done',
+                                        onPressed: () => markComplete(event['_id']),
+                                      ),
+                              ),
+                            );
+                          },
+                        ),
+                  const SizedBox(height: 80), // room so FAB doesn't cover last item
+                ],
+              ),
+            ),
     );
   }
 }
