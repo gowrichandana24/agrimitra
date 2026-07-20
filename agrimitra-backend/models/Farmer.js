@@ -11,6 +11,7 @@ const farmerSchema = new mongoose.Schema({
     lat: { type: Number, default: 12.9716 },
     lon: { type: Number, default: 77.5946 }
   },
+  preferredLanguage: { type: String, default: 'en-IN' },
   createdAt: { type: Date, default: Date.now }
 });
 

@@ -4,13 +4,13 @@ const { askFarmAssistant, loadHistory } = require('../services/chatService');
 
 router.post('/:deviceId/ask', async (req, res) => {
   try {
-    const { question } = req.body;
+    const { question, language } = req.body;
 
     if (!question || question.trim() === '') {
       return res.status(400).json({ message: 'Question is required' });
     }
 
-    const answer = await askFarmAssistant(req.farmerId, req.params.deviceId, question);
+    const answer = await askFarmAssistant(req.farmerId, req.params.deviceId, question, language);
     res.json({ question, answer });
   } catch (err) {
     console.error('Chat route error:', err);

@@ -68,15 +68,20 @@ router.post('/login', async (req, res) => {
 // Update farm profile (crop + planting date) — this auto-regenerates the calendar
 router.patch('/profile', verifyToken, async (req, res) => {
   try {
-    const { currentCrop, plantingDate, deviceId } = req.body;
+    const { currentCrop, plantingDate, deviceId, preferredLanguage } = req.body;
 
-    if (!currentCrop || !plantingDate) {
-      return res.status(400).json({ message: 'currentCrop and plantingDate are required' });
+    if (!currentCrop && !plantingDate && !preferredLanguage) {
+      return res.status(400).json({ message: 'At least one field (currentCrop, plantingDate, preferredLanguage) is required' });
     }
+
+    const update = {};
+    if (currentCrop) update.currentCrop = currentCrop;
+    if (plantingDate) update.plantingDate = new Date(plantingDate);
+    if (preferredLanguage) update.preferredLanguage = preferredLanguage;
 
     const farmer = await Farmer.findByIdAndUpdate(
       req.farmerId,
-      { currentCrop, plantingDate: new Date(plantingDate) },
+      update,
       { new: true }
     );
 
@@ -84,17 +89,22 @@ router.patch('/profile', verifyToken, async (req, res) => {
       return res.status(404).json({ message: 'Farmer not found' });
     }
 
-    const events = await generateCropCalendar(
-      req.farmerId,
-      deviceId || 'esp32-01',
-      currentCrop,
-      plantingDate
-    );
+    // Only regenerate calendar if crop or planting date changed
+    let generatedEvents = 0;
+    if (currentCrop && plantingDate) {
+      const events = await generateCropCalendar(
+        req.farmerId,
+        deviceId || 'esp32-01',
+        currentCrop,
+        plantingDate
+      );
+      generatedEvents = events.length;
+    }
 
     res.json({
-      message: 'Profile updated and calendar generated',
-      farmer: { currentCrop: farmer.currentCrop, plantingDate: farmer.plantingDate },
-      generatedEvents: events.length
+      message: 'Profile updated',
+      farmer: { currentCrop: farmer.currentCrop, plantingDate: farmer.plantingDate, preferredLanguage: farmer.preferredLanguage },
+      generatedEvents
     });
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
@@ -118,6 +128,7 @@ router.get('/profile', verifyToken, async (req, res) => {
       farmName: farmer.farmName,
       currentCrop: farmer.currentCrop,
       plantingDate: farmer.plantingDate,
+      preferredLanguage: farmer.preferredLanguage || 'en-IN',
       growthStatus
     });
   } catch (err) {

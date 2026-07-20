@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const SensorLog = require('../models/SensorLog');
+const Farmer = require('../models/Farmer');
+const { fetchWeather, extractTodayStats } = require('../services/weatherService');
 
-// You'll need axios installed in the backend if you haven't already:
-// npm install axios
+const DEFAULT_LAT = 12.9716;
+const DEFAULT_LON = 77.5946;
 
 router.get('/:deviceId/recommend', async (req, res) => {
   try {
@@ -15,10 +17,12 @@ router.get('/:deviceId/recommend', async (req, res) => {
       return res.status(404).json({ message: 'No sensor data found for this device' });
     }
 
-    // N, P, K, and pH aren't things your current sensors measure yet,
-    // so for now we use reasonable placeholder soil values alongside
-    // your REAL temperature and humidity readings. Swapping in real
-    // NPK/pH sensor values later is a one-line change here.
+    const farmer = await Farmer.findById(req.farmerId);
+    const lat = farmer?.location?.lat ?? DEFAULT_LAT;
+    const lon = farmer?.location?.lon ?? DEFAULT_LON;
+
+    // N, P, K, and pH aren't measured by current sensors — these are reasonable
+    // soil defaults. Swap in real sensor values when available.
     const payload = {
       N: 70,
       P: 40,
@@ -26,8 +30,19 @@ router.get('/:deviceId/recommend', async (req, res) => {
       ph: 6.5,
       temperature: latest.temperature,
       humidity: latest.humidity,
-      rainfall: 120 // placeholder until wired to OpenWeather's rainfall data
+      rainfall: 120
     };
+
+    // Try to get real rainfall from weather data
+    try {
+      const forecast = await fetchWeather(lat, lon);
+      const todayStats = extractTodayStats(forecast);
+      // Use rain probability as a proxy for expected rainfall intensity
+      // A probability of 100% roughly maps to ~15mm, 0% to 0mm
+      payload.rainfall = Math.round(todayStats.rainProbability * 0.15);
+    } catch (_) {
+      // Weather fetch failed — keep default rainfall value
+    }
 
     const response = await axios.post('http://localhost:5001/predict', payload);
 

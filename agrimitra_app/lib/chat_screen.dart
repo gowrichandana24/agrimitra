@@ -5,6 +5,14 @@ import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+const Map<String, String> supportedLanguages = {
+  'en-IN': 'English',
+  'hi-IN': 'हिन्दी',
+  'ta-IN': 'தமிழ்',
+  'ml-IN': 'മലയാളം',
+  'kn-IN': 'ಕನ್ನಡ',
+};
+
 class ChatMessage {
   final String text;
   final bool isUser;
@@ -28,18 +36,71 @@ class _ChatScreenState extends State<ChatScreen> {
   final FlutterTts tts = FlutterTts();
   bool isListening = false;
   bool speechAvailable = false;
-  bool autoSpeak = false;
+  bool autoSpeak = true;
   bool isSpeaking = false;
+
+  String selectedLanguage = 'en-IN';
+  Set<String> availableSttLocales = {};
+  bool sttLocalesLoaded = false;
 
   final String chatUrl = "http://localhost:5000/api/chat/esp32-01/ask";
   final String historyUrl = "http://localhost:5000/api/chat/history";
+  final String profileUrl = "http://localhost:5000/api/auth/profile";
 
   @override
   void initState() {
     super.initState();
     initSpeech();
     initTts();
+    loadPreferences();
     loadChatHistory();
+  }
+
+  Future<void> loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedLang = prefs.getString('preferredLanguage');
+    if (savedLang != null && supportedLanguages.containsKey(savedLang)) {
+      setState(() => selectedLanguage = savedLang);
+    }
+
+    // Also try to load from backend profile
+    try {
+      final token = prefs.getString('token');
+      if (token != null) {
+        final response = await http.get(
+          Uri.parse(profileUrl),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final backendLang = data['preferredLanguage'];
+          if (backendLang != null && supportedLanguages.containsKey(backendLang)) {
+            setState(() => selectedLanguage = backendLang);
+            await prefs.setString('preferredLanguage', backendLang);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> persistLanguage(String langCode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('preferredLanguage', langCode);
+
+    // Sync to backend profile
+    try {
+      final token = prefs.getString('token');
+      if (token != null) {
+        await http.patch(
+          Uri.parse(profileUrl),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'preferredLanguage': langCode}),
+        );
+      }
+    } catch (_) {}
   }
 
   Future<void> loadChatHistory() async {
@@ -77,6 +138,13 @@ class _ChatScreenState extends State<ChatScreen> {
       },
       onError: (error) => setState(() => isListening = false),
     );
+    if (speechAvailable) {
+      final locales = await speech.locales();
+      setState(() {
+        availableSttLocales = locales.map((l) => l.localeId).toSet();
+        sttLocalesLoaded = true;
+      });
+    }
     setState(() {});
   }
 
@@ -95,8 +163,42 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  bool isSttLocaleSupported(String localeCode) {
+    if (!sttLocalesLoaded) return false;
+    // Check exact match first
+    if (availableSttLocales.contains(localeCode)) return true;
+    // Check language-only match (e.g. "hi" matches "hi-IN")
+    final langOnly = localeCode.split('-').first;
+    return availableSttLocales.any((l) => l.startsWith(langOnly));
+  }
+
+  String getSttLocale(String localeCode) {
+    if (availableSttLocales.contains(localeCode)) return localeCode;
+    final langOnly = localeCode.split('-').first;
+    final match = availableSttLocales.firstWhere(
+      (l) => l.startsWith(langOnly),
+      orElse: () => 'en-IN',
+    );
+    return match;
+  }
+
   void startListening() async {
     if (!speechAvailable) return;
+
+    if (!isSttLocaleSupported(selectedLanguage)) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Voice input for ${supportedLanguages[selectedLanguage]} is not available on this device. You can still type.',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    final locale = getSttLocale(selectedLanguage);
     setState(() => isListening = true);
     await speech.listen(
       onResult: (result) {
@@ -107,7 +209,7 @@ class _ChatScreenState extends State<ChatScreen> {
           sendMessage();
         }
       },
-      localeId: 'en_IN',
+      localeId: locale,
     );
   }
 
@@ -117,9 +219,26 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> speakText(String text) async {
-    await tts.setLanguage('en-IN');
-    await tts.setSpeechRate(0.45);
-    await tts.speak(text);
+    try {
+      await tts.setLanguage(selectedLanguage);
+      await tts.setSpeechRate(0.45);
+      await tts.speak(text);
+    } catch (_) {
+      // TTS locale not supported — try language-only fallback
+      try {
+        final langOnly = selectedLanguage.split('-').first;
+        await tts.setLanguage(langOnly);
+        await tts.setSpeechRate(0.45);
+        await tts.speak(text);
+      } catch (_) {
+        // Last resort — try English
+        try {
+          await tts.setLanguage('en-IN');
+          await tts.setSpeechRate(0.45);
+          await tts.speak(text);
+        } catch (__) {}
+      }
+    }
   }
 
   Future<void> stopSpeaking() async {
@@ -147,7 +266,10 @@ class _ChatScreenState extends State<ChatScreen> {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({'question': question}),
+        body: jsonEncode({
+          'question': question,
+          'language': selectedLanguage,
+        }),
       );
 
       if (response.statusCode == 200) {
@@ -174,12 +296,59 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void showLanguageSelector() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text(
+                'Select Language / भाषा चुनें',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+            ...supportedLanguages.entries.map((entry) {
+              final isSelected = entry.key == selectedLanguage;
+              return ListTile(
+                leading: Icon(
+                  isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                  color: isSelected ? Colors.green : null,
+                ),
+                title: Text(entry.value),
+                subtitle: Text(entry.key),
+                onTap: () {
+                  setState(() => selectedLanguage = entry.key);
+                  persistLanguage(entry.key);
+                  Navigator.pop(context);
+                },
+              );
+            }),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentLangName = supportedLanguages[selectedLanguage] ?? 'English';
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ask AgriMitra'),
         actions: [
+          TextButton.icon(
+            onPressed: showLanguageSelector,
+            icon: const Icon(Icons.language, color: Colors.white, size: 20),
+            label: Text(
+              currentLangName,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
+          ),
           IconButton(
             icon: Icon(autoSpeak ? Icons.volume_up : Icons.volume_off),
             tooltip: autoSpeak ? 'Auto-speak: ON' : 'Auto-speak: OFF',
@@ -245,7 +414,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   const Icon(Icons.graphic_eq, size: 16, color: Colors.green),
                   const SizedBox(width: 6),
-                  const Text('Speaking...', style: TextStyle(fontSize: 12, color: Colors.green)),
+                  Text(
+                    'Speaking in $currentLangName...',
+                    style: const TextStyle(fontSize: 12, color: Colors.green),
+                  ),
                   const Spacer(),
                   TextButton.icon(
                     onPressed: stopSpeaking,
@@ -264,8 +436,16 @@ class _ChatScreenState extends State<ChatScreen> {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 12),
               child: Text(
-                'Voice input not available in this browser — type instead.',
+                'Voice input not available on this device — type instead.',
                 style: TextStyle(fontSize: 12, color: Colors.red),
+              ),
+            ),
+          if (speechAvailable && sttLocalesLoaded && !isSttLocaleSupported(selectedLanguage))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                'Voice for ${supportedLanguages[selectedLanguage]} not available on this device — type instead.',
+                style: const TextStyle(fontSize: 12, color: Colors.orange),
               ),
             ),
           Padding(
@@ -275,9 +455,9 @@ class _ChatScreenState extends State<ChatScreen> {
                 Expanded(
                   child: TextField(
                     controller: controller,
-                    decoration: const InputDecoration(
-                      hintText: 'Ask about your farm...',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: _getHintText(selectedLanguage),
+                      border: const OutlineInputBorder(),
                     ),
                     onSubmitted: (_) => sendMessage(),
                   ),
@@ -299,5 +479,20 @@ class _ChatScreenState extends State<ChatScreen> {
         ],
       ),
     );
+  }
+
+  String _getHintText(String locale) {
+    switch (locale) {
+      case 'hi-IN':
+        return 'अपने खेत के बारे में पूछें...';
+      case 'ta-IN':
+        return 'உங்கள் பண்ணை பற்றி கேளுங்கள்...';
+      case 'ml-IN':
+        return 'നിങ്ങളുടെ കൃഷിയെ കുറിച്ച് ചോദിക്കൂ...';
+      case 'kn-IN':
+        return 'ನಿಮ್ಮ ಕೃಷಿಯ ಬಗ್ಗೆ ಕೇಳಿ...';
+      default:
+        return 'Ask about your farm...';
+    }
   }
 }
