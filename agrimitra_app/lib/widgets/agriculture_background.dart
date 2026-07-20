@@ -17,38 +17,35 @@ class AgricultureBackground extends StatefulWidget {
 
 class _AgricultureBackgroundState extends State<AgricultureBackground>
     with TickerProviderStateMixin {
-  // Fade-in animation
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
 
-  // Parallax offset
   Offset _mouseOffset = Offset.zero;
 
-  // Leaf animation controllers
+  // Leaves
   late List<AnimationController> _leafControllers;
-  late List<Animation<double>> _leafAnimations;
   final int _leafCount = 6;
+  late List<_LeafData> _leafData;
 
-  // Particle animation controllers
+  // Particles
   late AnimationController _particleController;
-  late List<Animation<double>> _particleAnimations;
-  final int _particleCount = 12;
+  late List<_ParticleData> _particleData;
+  final int _particleCount = 10;
 
-  // Cloud animation
+  // Clouds
   late AnimationController _cloudController;
   late Animation<double> _cloudAnimation;
 
-  final Random _random = Random();
+  // Sunlight
+  late AnimationController _sunlightController;
+  late Animation<double> _sunlightAnim;
 
-  // Pre-generated leaf positions and properties
-  late List<_LeafData> _leafData;
-  late List<_ParticleData> _particleData;
+  final Random _random = Random();
 
   @override
   void initState() {
     super.initState();
 
-    // Fade-in controller
     _fadeController = AnimationController(
       vsync: this,
       duration: Duration(milliseconds: widget.fadeDuration.toInt()),
@@ -58,71 +55,82 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
     );
     _fadeController.forward();
 
-    // Pre-generate leaf data
+    _generateLeafData();
+    _generateParticleData();
+    _initLeafControllers();
+    _initParticleController();
+    _initCloudController();
+    _initSunlightController();
+  }
+
+  void _generateLeafData() {
     _leafData = List.generate(_leafCount, (i) {
       return _LeafData(
         startX: _random.nextDouble(),
-        speed: 0.3 + _random.nextDouble() * 0.4,
-        amplitude: 20 + _random.nextDouble() * 30,
-        size: 14 + _random.nextDouble() * 10,
-        delay: _random.nextDouble() * 0.6,
+        startY: -0.1 - _random.nextDouble() * 0.15,
+        speed: 0.06 + _random.nextDouble() * 0.06,
+        driftX: (_random.nextDouble() - 0.5) * 0.12,
+        size: 16 + _random.nextDouble() * 14,
         rotation: _random.nextDouble() * pi * 2,
+        rotationSpeed: (_random.nextDouble() - 0.5) * 0.8,
+        swayAmplitude: 15 + _random.nextDouble() * 20,
+        swayFrequency: 0.4 + _random.nextDouble() * 0.6,
+        opacity: 0.2 + _random.nextDouble() * 0.2,
+        fadePhase: _random.nextDouble() * pi * 2,
       );
     });
+  }
 
-    // Pre-generate particle data
+  void _generateParticleData() {
     _particleData = List.generate(_particleCount, (i) {
       return _ParticleData(
         x: _random.nextDouble(),
         y: _random.nextDouble(),
-        size: 2 + _random.nextDouble() * 3,
-        opacity: 0.2 + _random.nextDouble() * 0.4,
-        pulseSpeed: 0.8 + _random.nextDouble() * 1.2,
+        size: 1.5 + _random.nextDouble() * 2.5,
+        baseOpacity: 0.12 + _random.nextDouble() * 0.18,
+        driftX: (_random.nextDouble() - 0.5) * 0.003,
+        driftY: -0.001 - _random.nextDouble() * 0.002,
+        pulsePhase: _random.nextDouble() * pi * 2,
       );
     });
+  }
 
-    // Leaf animations
+  void _initLeafControllers() {
     _leafControllers = List.generate(_leafCount, (i) {
+      final duration = (8000 + _random.nextDouble() * 6000).toInt();
       return AnimationController(
         vsync: this,
-        duration: Duration(
-          milliseconds: (4000 + _random.nextDouble() * 3000).toInt(),
-        ),
-      )..repeat(reverse: true);
+        duration: Duration(milliseconds: duration),
+      )..repeat();
     });
+  }
 
-    _leafAnimations = List.generate(_leafCount, (i) {
-      return Tween<double>(begin: 0, end: 1).animate(
-        CurvedAnimation(
-          parent: _leafControllers[i],
-          curve: Curves.easeInOut,
-        ),
-      );
-    });
-
-    // Particle pulse animation
+  void _initParticleController() {
     _particleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 3000),
+      duration: const Duration(milliseconds: 4000),
     )..repeat(reverse: true);
+  }
 
-    _particleAnimations = List.generate(_particleCount, (i) {
-      return Tween<double>(begin: 0.3, end: 1.0).animate(
-        CurvedAnimation(
-          parent: _particleController,
-          curve: Curves.easeInOut,
-        ),
-      );
-    });
-
-    // Cloud drift animation
+  void _initCloudController() {
     _cloudController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 12000),
+      duration: const Duration(milliseconds: 18000),
     )..repeat(reverse: true);
 
-    _cloudAnimation = Tween<double>(begin: -30, end: 30).animate(
+    _cloudAnimation = Tween<double>(begin: -20, end: 20).animate(
       CurvedAnimation(parent: _cloudController, curve: Curves.easeInOut),
+    );
+  }
+
+  void _initSunlightController() {
+    _sunlightController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 10000),
+    )..repeat(reverse: true);
+
+    _sunlightAnim = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _sunlightController, curve: Curves.easeInOut),
     );
   }
 
@@ -134,6 +142,7 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
     }
     _particleController.dispose();
     _cloudController.dispose();
+    _sunlightController.dispose();
     super.dispose();
   }
 
@@ -160,41 +169,13 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // Base gradient background
                 _buildBaseGradient(),
-
-                // Parallax background image
                 _buildParallaxImage(),
-
-                // Overlay for readability
                 _buildOverlay(),
-
-                // Animated clouds
-                AnimatedBuilder(
-                  animation: _cloudAnimation,
-                  builder: (context, _) => _buildClouds(),
-                ),
-
-                // Floating leaves
-                ...List.generate(_leafCount, (i) {
-                  return AnimatedBuilder(
-                    animation: Listenable.merge([
-                      _leafControllers[i],
-                      _particleController,
-                    ]),
-                    builder: (context, _) => _buildLeaf(i),
-                  );
-                }),
-
-                // Glowing particles
-                ...List.generate(_particleCount, (i) {
-                  return AnimatedBuilder(
-                    animation: _particleAnimations[i],
-                    builder: (context, _) => _buildParticle(i),
-                  );
-                }),
-
-                // Content (login card)
+                _buildSunlightLayer(),
+                _buildCloudLayer(),
+                _buildLeavesLayer(),
+                _buildParticlesLayer(),
                 widget.child,
               ],
             ),
@@ -252,108 +233,211 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color(0xFF1B5E20).withValues(alpha: 0.65),
-            const Color(0xFF2E7D32).withValues(alpha: 0.75),
-            const Color(0xFF388E3C).withValues(alpha: 0.85),
+            const Color(0xFF1B5E20).withValues(alpha: 0.40),
+            const Color(0xFF2E7D32).withValues(alpha: 0.45),
+            const Color(0xFF388E3C).withValues(alpha: 0.50),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildClouds() {
-    final cloudOffset = _cloudAnimation.value;
-    return Stack(
-      children: [
-        Positioned(
-          top: MediaQuery.of(context).size.height * 0.08,
-          left: cloudOffset - 40,
-          child: _cloudShape(120, 0.08),
-        ),
-        Positioned(
-          top: MediaQuery.of(context).size.height * 0.15,
-          right: cloudOffset - 20,
-          child: _cloudShape(100, 0.06),
-        ),
-        Positioned(
-          top: MediaQuery.of(context).size.height * 0.25,
-          left: cloudOffset + 60,
-          child: _cloudShape(80, 0.05),
-        ),
-      ],
+  Widget _buildSunlightLayer() {
+    return AnimatedBuilder(
+      animation: _sunlightAnim,
+      builder: (context, _) {
+        final t = _sunlightAnim.value;
+        final screenWidth = MediaQuery.of(context).size.width;
+        final screenHeight = MediaQuery.of(context).size.height;
+        final offsetX = screenWidth * 0.65 + sin(t * pi) * 30;
+        final offsetY = screenHeight * 0.05 + cos(t * pi * 0.7) * 15;
+        final opacity = 0.08 + t * 0.04;
+
+        return Positioned(
+          left: offsetX - 150,
+          top: offsetY - 100,
+          child: Container(
+            width: 300,
+            height: 200,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  const Color(0xFFFFF9C4).withValues(alpha: opacity),
+                  const Color(0xFFFFF176).withValues(alpha: opacity * 0.5),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
-  Widget _cloudShape(double width, double opacity) {
+  Widget _buildCloudLayer() {
+    return AnimatedBuilder(
+      animation: _cloudAnimation,
+      builder: (context, _) {
+        final offset = _cloudAnimation.value;
+        final screenH = MediaQuery.of(context).size.height;
+
+        return Stack(
+          children: [
+            Positioned(
+              top: screenH * 0.06,
+              left: offset - 40,
+              child: _buildCloud(130, 0.06),
+            ),
+            Positioned(
+              top: screenH * 0.14,
+              right: offset - 30,
+              child: _buildCloud(100, 0.05),
+            ),
+            Positioned(
+              top: screenH * 0.22,
+              left: offset + 80,
+              child: _buildCloud(80, 0.04),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildCloud(double width, double opacity) {
     return Container(
       width: width,
-      height: width * 0.4,
+      height: width * 0.35,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: opacity),
-        borderRadius: BorderRadius.circular(width * 0.2),
+        borderRadius: BorderRadius.circular(width * 0.25),
         boxShadow: [
           BoxShadow(
-            color: Colors.white.withValues(alpha: opacity * 0.5),
-            blurRadius: width * 0.15,
-            spreadRadius: width * 0.05,
+            color: Colors.white.withValues(alpha: opacity * 0.4),
+            blurRadius: width * 0.12,
+            spreadRadius: width * 0.03,
           ),
         ],
       ),
     );
   }
 
+  Widget _buildLeavesLayer() {
+    return Stack(
+      children: List.generate(_leafCount, (i) {
+        return AnimatedBuilder(
+          animation: _leafControllers[i],
+          builder: (context, _) => _buildLeaf(i),
+        );
+      }),
+    );
+  }
+
   Widget _buildLeaf(int index) {
     final data = _leafData[index];
-    final animValue = _leafAnimations[index].value;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+    final t = _leafControllers[index].value;
+    final screenW = MediaQuery.of(context).size.width;
+    final screenH = MediaQuery.of(context).size.height;
 
-    final x = data.startX * screenWidth;
-    final y = animValue * (screenHeight + 100) - 50;
-    final sway = sin(animValue * pi * 2) * data.amplitude;
+    // Diagonal movement
+    final x = data.startX * screenW + t * data.driftX * screenW;
+    final y = (data.startY + t * data.speed) * screenH;
+
+    // Natural sway
+    final sway = sin(t * pi * 2 * data.swayFrequency) * data.swayAmplitude;
+
+    // Fade in at top, fade out at bottom
+    double leafOpacity;
+    if (t < 0.15) {
+      leafOpacity = t / 0.15;
+    } else if (t > 0.85) {
+      leafOpacity = (1.0 - t) / 0.15;
+    } else {
+      leafOpacity = 1.0;
+    }
+    leafOpacity *= data.opacity;
+
+    // Pulsing opacity
+    leafOpacity *= 0.7 + 0.3 * sin(t * pi * 4 + data.fadePhase);
+
+    final rotation = data.rotation + t * data.rotationSpeed * pi * 2;
+
+    // Card avoidance: push leaves away from center
+    final centerX = screenW * 0.5;
+    final cardHalfW = 180.0;
+    final distFromCenter = (x + sway - centerX).abs();
+    final verticalCenter = screenH * 0.45;
+    final distFromVertCenter = (y - verticalCenter).abs();
+    final inCardZone = distFromCenter < cardHalfW && distFromVertCenter < 150;
+
+    final pushX = inCardZone
+        ? (x + sway - centerX).sign * (cardHalfW - distFromCenter + 20)
+        : 0.0;
+
+    final colors = [
+      const Color(0xFF81C784),
+      const Color(0xFF66BB6A),
+      const Color(0xFF4CAF50),
+      const Color(0xFFA5D6A7),
+    ];
+    final leafColor = colors[index % colors.length];
 
     return Positioned(
-      left: x + sway,
+      left: x + sway + pushX,
       top: y,
       child: Transform.rotate(
-        angle: data.rotation + animValue * pi * 0.5,
-        child: Icon(
-          Icons.eco,
-          size: data.size,
-          color: Color.lerp(
-            const Color(0xFF8BC34A),
-            const Color(0xFF4CAF50),
-            animValue,
-          )!.withValues(alpha: 0.35),
+        angle: rotation,
+        child: Opacity(
+          opacity: leafOpacity.clamp(0.0, 1.0),
+          child: Icon(
+            Icons.eco,
+            size: data.size,
+            color: leafColor,
+          ),
         ),
       ),
     );
   }
 
+  Widget _buildParticlesLayer() {
+    return Stack(
+      children: List.generate(_particleCount, (i) {
+        return AnimatedBuilder(
+          animation: _particleController,
+          builder: (context, _) => _buildParticle(i),
+        );
+      }),
+    );
+  }
+
   Widget _buildParticle(int index) {
     final data = _particleData[index];
-    final animValue = _particleAnimations[index].value;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+    final t = _particleController.value;
+    final screenW = MediaQuery.of(context).size.width;
+    final screenH = MediaQuery.of(context).size.height;
 
-    final x = data.x * screenWidth;
-    final y = data.y * screenHeight;
-    final pulse = animValue * data.size;
+    final x = data.x * screenW + sin(t * pi * 2 + data.pulsePhase) * 8;
+    final y = data.y * screenH + cos(t * pi * 1.5 + data.pulsePhase) * 6;
+
+    final pulse = 0.6 + 0.4 * sin(t * pi * 2 + data.pulsePhase);
+    final opacity = data.baseOpacity * pulse;
+    final size = data.size * (0.8 + 0.2 * pulse);
 
     return Positioned(
       left: x,
       top: y,
       child: Container(
-        width: pulse,
-        height: pulse,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0xFF8BC34A).withValues(alpha: data.opacity * animValue),
+          color: Colors.white.withValues(alpha: opacity),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF8BC34A).withValues(alpha: data.opacity * 0.5 * animValue),
-              blurRadius: pulse * 2,
-              spreadRadius: pulse * 0.5,
+              color: const Color(0xFFC8E6C9).withValues(alpha: opacity * 0.6),
+              blurRadius: size * 3,
+              spreadRadius: size * 0.5,
             ),
           ],
         ),
@@ -364,19 +448,29 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
 
 class _LeafData {
   final double startX;
+  final double startY;
   final double speed;
-  final double amplitude;
+  final double driftX;
   final double size;
-  final double delay;
   final double rotation;
+  final double rotationSpeed;
+  final double swayAmplitude;
+  final double swayFrequency;
+  final double opacity;
+  final double fadePhase;
 
   _LeafData({
     required this.startX,
+    required this.startY,
     required this.speed,
-    required this.amplitude,
+    required this.driftX,
     required this.size,
-    required this.delay,
     required this.rotation,
+    required this.rotationSpeed,
+    required this.swayAmplitude,
+    required this.swayFrequency,
+    required this.opacity,
+    required this.fadePhase,
   });
 }
 
@@ -384,14 +478,18 @@ class _ParticleData {
   final double x;
   final double y;
   final double size;
-  final double opacity;
-  final double pulseSpeed;
+  final double baseOpacity;
+  final double driftX;
+  final double driftY;
+  final double pulsePhase;
 
   _ParticleData({
     required this.x,
     required this.y,
     required this.size,
-    required this.opacity,
-    required this.pulseSpeed,
+    required this.baseOpacity,
+    required this.driftX,
+    required this.driftY,
+    required this.pulsePhase,
   });
 }
