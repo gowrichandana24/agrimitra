@@ -1,8 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const SensorLog = require('../models/SensorLog');
+const Farmer = require('../models/Farmer');
 const { getIrrigationRecommendation } = require('../services/irrigationService');
 const { checkWeatherAlerts } = require('../services/alertService');
+const { computeGrowthStatus } = require('../services/cropKnowledge');
+
+const DEFAULT_LAT = 12.9716;
+const DEFAULT_LON = 77.5946;
 
 // GET irrigation recommendation for a device, using its latest real soil moisture reading
 router.get('/:deviceId/recommendation', async (req, res) => {
@@ -14,13 +19,26 @@ router.get('/:deviceId/recommendation', async (req, res) => {
       return res.status(404).json({ message: 'No sensor data found for this device' });
     }
 
-    // For now, farm location and crop info are hardcoded (Bengaluru, tomato, mid-stage).
-    // Later this can come from a Farm/Device profile stored per-farmer.
+    const farmer = await Farmer.findById(req.farmerId);
+    if (!farmer) {
+      return res.status(404).json({ message: 'Farmer profile not found' });
+    }
+
+    const cropType = farmer.currentCrop || 'tomato';
+    const lat = farmer.location?.lat ?? DEFAULT_LAT;
+    const lon = farmer.location?.lon ?? DEFAULT_LON;
+
+    let growthStage = 'mid';
+    if (farmer.currentCrop && farmer.plantingDate) {
+      const status = computeGrowthStatus(farmer.currentCrop, farmer.plantingDate);
+      growthStage = status.stage;
+    }
+
     const recommendation = await getIrrigationRecommendation({
-      lat: 12.9716,
-      lon: 77.5946,
-      cropType: 'tomato',
-      growthStage: 'mid',
+      lat,
+      lon,
+      cropType,
+      growthStage,
       soilMoisture: latest.moisture
     });
 
