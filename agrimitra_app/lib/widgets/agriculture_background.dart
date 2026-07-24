@@ -217,7 +217,7 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
             fit: BoxFit.cover,
             alignment: Alignment.center,
             colorFilter: ColorFilter.mode(
-              Colors.black.withValues(alpha: 0.15),
+              Colors.black.withValues(alpha: 0.06),
               BlendMode.darken,
             ),
           ),
@@ -233,9 +233,9 @@ class _AgricultureBackgroundState extends State<AgricultureBackground>
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
           colors: [
-            const Color(0xFF1B5E20).withValues(alpha: 0.40),
-            const Color(0xFF2E7D32).withValues(alpha: 0.45),
-            const Color(0xFF388E3C).withValues(alpha: 0.50),
+            const Color(0xFF1B5E20).withValues(alpha: 0.22),
+            const Color(0xFF2E7D32).withValues(alpha: 0.26),
+            const Color(0xFF388E3C).withValues(alpha: 0.30),
           ],
         ),
       ),
