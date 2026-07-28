@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'main.dart';
+import 'config.dart';
 import 'theme.dart';
 import 'widgets/agriculture_background.dart';
 import 'widgets/plant_growth_loader.dart';
@@ -27,7 +28,7 @@ class _LoginScreenState extends State<LoginScreen>
   bool isLoading = false;
   String? errorMessage;
 
-  final String baseUrl = "http://localhost:5000/api/auth";
+  final String baseUrl = "${Config.apiBaseUrl}/api/auth";
 
   final phoneFocus = FocusNode();
   final passwordFocus = FocusNode();

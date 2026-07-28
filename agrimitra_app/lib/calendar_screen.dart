@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'crop_setup_screen.dart';
+import 'config.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -20,8 +21,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
   DateTime focusedDay = DateTime.now();
   DateTime? selectedDay;
 
-  final String allEventsUrl = "http://localhost:5000/api/calendar/esp32-01/all";
-  final String createUrl = "http://localhost:5000/api/calendar";
+  final String allEventsUrl = "${Config.apiBaseUrl}/api/calendar/esp32-01/all";
+  final String createUrl = "${Config.apiBaseUrl}/api/calendar";
 
   final titleController = TextEditingController();
   final notesController = TextEditingController();
@@ -54,7 +55,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     try {
       final headers = await getAuthHeaders();
       final response = await http.get(
-        Uri.parse('http://localhost:5000/api/auth/profile'),
+        Uri.parse('${Config.apiBaseUrl}/api/auth/profile'),
         headers: headers,
       );
       if (response.statusCode == 200) {
@@ -128,7 +129,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     try {
       final headers = await getAuthHeaders();
       await http.patch(
-        Uri.parse('http://localhost:5000/api/calendar/$eventId/complete'),
+        Uri.parse('${Config.apiBaseUrl}/api/calendar/$eventId/complete'),
         headers: headers,
       );
       fetchEvents();

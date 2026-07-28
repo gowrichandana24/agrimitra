@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'config.dart';
 
 class CropSetupScreen extends StatefulWidget {
   const CropSetupScreen({super.key});
@@ -27,7 +28,7 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
       final token = prefs.getString('token');
 
       final response = await http.patch(
-        Uri.parse('http://localhost:5000/api/auth/profile'),
+        Uri.parse('${Config.apiBaseUrl}/api/auth/profile'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
+import 'config.dart';
 import 'login_screen.dart';
 import 'calendar_screen.dart';
 import 'theme.dart';
@@ -44,10 +45,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Timer? timer;
   String? farmerName;
 
-  final String baseUrl = "http://localhost:5000/api/sensors/esp32-01";
-  final String irrigationUrl = "http://localhost:5000/api/irrigation/esp32-01/recommendation";
-  final String cropUrl = "http://localhost:5000/api/crop/esp32-01/recommend";
-  final String alertsUrl = "http://localhost:5000/api/alerts/esp32-01";
+  final String baseUrl = "${Config.apiBaseUrl}/api/sensors/esp32-01";
+  final String irrigationUrl = "${Config.apiBaseUrl}/api/irrigation/esp32-01/recommendation";
+  final String cropUrl = "${Config.apiBaseUrl}/api/crop/esp32-01/recommend";
+  final String alertsUrl = "${Config.apiBaseUrl}/api/alerts/esp32-01";
 
   @override
   void initState() {

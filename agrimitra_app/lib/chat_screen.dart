@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'config.dart';
 
 const Map<String, String> supportedLanguages = {
   'en-IN': 'English',
@@ -43,9 +44,9 @@ class _ChatScreenState extends State<ChatScreen> {
   Set<String> availableSttLocales = {};
   bool sttLocalesLoaded = false;
 
-  final String chatUrl = "http://localhost:5000/api/chat/esp32-01/ask";
-  final String historyUrl = "http://localhost:5000/api/chat/history";
-  final String profileUrl = "http://localhost:5000/api/auth/profile";
+  final String chatUrl = "${Config.apiBaseUrl}/api/chat/esp32-01/ask";
+  final String historyUrl = "${Config.apiBaseUrl}/api/chat/history";
+  final String profileUrl = "${Config.apiBaseUrl}/api/auth/profile";
 
   @override
   void initState() {
