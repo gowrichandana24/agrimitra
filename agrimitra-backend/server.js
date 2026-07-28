@@ -21,7 +21,7 @@ app.use('/api/chat', verifyToken, chatRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/alerts', verifyToken, alertRoutes);
 app.use('/api/calendar', verifyToken, calendarRoutes);
-app.use('/api/chat', verifyToken, chatRoutes);
+
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {

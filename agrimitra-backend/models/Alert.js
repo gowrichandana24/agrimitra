@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const alertSchema = new mongoose.Schema({
+  farmerId: { type: String },
   deviceId: { type: String, required: true },
   type: { type: String, required: true }, // e.g. 'CRITICAL_DRY', 'HIGH_TEMP', 'HEAVY_RAIN_EXPECTED'
   severity: { type: String, enum: ['info', 'warning', 'critical'], default: 'warning' },

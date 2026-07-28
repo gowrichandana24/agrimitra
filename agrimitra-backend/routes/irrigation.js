@@ -42,7 +42,7 @@ router.get('/:deviceId/recommendation', async (req, res) => {
       soilMoisture: latest.moisture
     });
 
-    await checkWeatherAlerts(req.params.deviceId, recommendation);
+    await checkWeatherAlerts(req.params.deviceId, recommendation, req.farmerId);
 
     res.json(recommendation);
   } catch (err) {

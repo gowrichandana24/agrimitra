@@ -1,5 +1,6 @@
 const mqtt = require('mqtt');
 const SensorLog = require('../models/SensorLog');
+const Farmer = require('../models/Farmer');
 const { checkSensorAlerts } = require('./alertService');
 
 function startMqttListener() {
@@ -19,7 +20,13 @@ function startMqttListener() {
  client.on('message', async (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
+
+    // Look up the farmer who owns this device
+    const farmer = await Farmer.findOne({ deviceId: data.deviceId });
+    const farmerId = farmer ? String(farmer._id) : undefined;
+
     const log = new SensorLog({
+      farmerId,
       deviceId: data.deviceId,
       moisture: data.moisture,
       temperature: data.temperature,
@@ -29,7 +36,7 @@ function startMqttListener() {
     await log.save();
     console.log('Saved sensor log:', data.deviceId, data.moisture);
 
-    await checkSensorAlerts(data.deviceId, { moisture: data.moisture, temperature: data.temperature });
+    await checkSensorAlerts(data.deviceId, { moisture: data.moisture, temperature: data.temperature }, farmerId);
   } catch (err) {
     console.error('Error saving sensor log:', err.message);
   }

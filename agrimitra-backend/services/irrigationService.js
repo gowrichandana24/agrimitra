@@ -1,11 +1,6 @@
 const { calculateET0 } = require('./et0Calculator');
 const { fetchWeather, extractTodayStats } = require('./weatherService');
-
-const CROP_KC = {
-  tomato: { initial: 0.6, mid: 1.15, late: 0.8 },
-  ragi: { initial: 0.5, mid: 1.0, late: 0.6 },
-  paddy: { initial: 1.05, mid: 1.2, late: 0.9 }
-};
+const { getCropInfo } = require('./cropKnowledge');
 
 // NEW: simple in-memory cache, keyed by lat,lon
 const weatherCache = {};
@@ -38,7 +33,7 @@ async function getIrrigationRecommendation({ lat, lon, cropType = 'tomato', grow
   const dayOfYear = getDayOfYear();
   const { ET0 } = calculateET0({ tMax, tMin, tMean, latitude: lat, dayOfYear });
 
-  const kc = CROP_KC[cropType]?.[growthStage] || 1.0;
+  const kc = getCropInfo(cropType).kc[growthStage] || 1.0;
   const cropWaterDemandMm = Number((ET0 * kc).toFixed(2));
 
   let shouldIrrigate = true;

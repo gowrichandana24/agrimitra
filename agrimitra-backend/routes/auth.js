@@ -78,6 +78,7 @@ router.patch('/profile', verifyToken, async (req, res) => {
     if (currentCrop) update.currentCrop = currentCrop;
     if (plantingDate) update.plantingDate = new Date(plantingDate);
     if (preferredLanguage) update.preferredLanguage = preferredLanguage;
+    if (deviceId) update.deviceId = deviceId;
 
     const farmer = await Farmer.findByIdAndUpdate(
       req.farmerId,

@@ -5,6 +5,7 @@ const farmerSchema = new mongoose.Schema({
   phone: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
   farmName: { type: String },
+  deviceId: { type: String, default: null },
   currentCrop: { type: String, default: null },
   plantingDate: { type: Date, default: null },
   location: {
