@@ -49,7 +49,10 @@ class _CropSetupScreenState extends State<CropSetupScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
+          SnackBar(
+            content: const Text('Connection issue. Please try again.'),
+            action: SnackBarAction(label: 'Retry', onPressed: saveProfile),
+          ),
         );
       }
     } finally {

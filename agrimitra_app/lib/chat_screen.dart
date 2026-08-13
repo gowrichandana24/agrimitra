@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'theme.dart';
 import 'config.dart';
 
 const Map<String, String> supportedLanguages = {
@@ -284,13 +285,13 @@ class _ChatScreenState extends State<ChatScreen> {
       } else {
         print('Chat request failed: ${response.statusCode} - ${response.body}');
         setState(() {
-          messages.add(ChatMessage(text: "Something went wrong. Try again.", isUser: false));
+          messages.add(ChatMessage(text: "Connection issue. Please try again.", isUser: false));
         });
       }
     } catch (e) {
       print('Chat request exception: $e');
       setState(() {
-        messages.add(ChatMessage(text: "Error: $e", isUser: false));
+        messages.add(ChatMessage(text: "Connection issue. Please try again.", isUser: false));
       });
     } finally {
       setState(() => isLoading = false);
@@ -316,7 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
               return ListTile(
                 leading: Icon(
                   isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: isSelected ? Colors.green : null,
+                  color: isSelected ? AgriMitraColors.primary : null,
                 ),
                 title: Text(entry.value),
                 subtitle: Text(entry.key),
@@ -376,7 +377,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       maxWidth: MediaQuery.of(context).size.width * 0.75,
                     ),
                     decoration: BoxDecoration(
-                      color: msg.isUser ? Colors.green.shade100 : Colors.grey.shade200,
+                      color: msg.isUser ? AgriMitraColors.primaryLight : AgriMitraColors.waterLight,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -397,7 +398,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             child: Icon(
                               isSpeaking ? Icons.stop_circle : Icons.volume_up,
                               size: 18,
-                              color: isSpeaking ? Colors.red : Colors.black54,
+                              color: isSpeaking ? AgriMitraColors.critical : AgriMitraColors.inkMuted,
                             ),
                           ),
                         ],
@@ -413,11 +414,11 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               child: Row(
                 children: [
-                  const Icon(Icons.graphic_eq, size: 16, color: Colors.green),
+                  const Icon(Icons.graphic_eq, size: 16, color: AgriMitraColors.primary),
                   const SizedBox(width: 6),
                   Text(
                     'Speaking in $currentLangName...',
-                    style: const TextStyle(fontSize: 12, color: Colors.green),
+                    style: const TextStyle(fontSize: 12, color: AgriMitraColors.primary),
                   ),
                   const Spacer(),
                   TextButton.icon(
@@ -438,7 +439,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 'Voice input not available on this device — type instead.',
-                style: TextStyle(fontSize: 12, color: Colors.red),
+                style: TextStyle(fontSize: 12, color: AgriMitraColors.critical),
               ),
             ),
           if (speechAvailable && sttLocalesLoaded && !isSttLocaleSupported(selectedLanguage))
@@ -446,7 +447,7 @@ class _ChatScreenState extends State<ChatScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
                 'Voice for ${supportedLanguages[selectedLanguage]} not available on this device — type instead.',
-                style: const TextStyle(fontSize: 12, color: Colors.orange),
+                style: const TextStyle(fontSize: 12, color: AgriMitraColors.warning),
               ),
             ),
           Padding(
@@ -467,7 +468,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 if (speechAvailable)
                   IconButton(
                     icon: Icon(isListening ? Icons.mic : Icons.mic_none),
-                    color: isListening ? Colors.red : null,
+                    color: isListening ? AgriMitraColors.critical : null,
                     onPressed: isListening ? stopListening : startListening,
                   ),
                 IconButton(

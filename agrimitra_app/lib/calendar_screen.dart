@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'crop_setup_screen.dart';
 import 'config.dart';
+import 'theme.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -213,11 +214,11 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
   Color colorForType(String type) {
     switch (type) {
-      case 'sowing': return Colors.brown;
-      case 'fertilizing': return Colors.purple;
-      case 'irrigation_check': return Colors.blue;
-      case 'harvest': return Colors.orange;
-      default: return Colors.green;
+      case 'sowing': return AgriMitraColors.ink;
+      case 'fertilizing': return AgriMitraColors.water;
+      case 'irrigation_check': return AgriMitraColors.water;
+      case 'harvest': return AgriMitraColors.accent;
+      default: return AgriMitraColors.primary;
     }
   }
 
@@ -226,7 +227,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
       return Card(
         margin: const EdgeInsets.all(12),
         child: ListTile(
-          leading: const Icon(Icons.add_circle_outline, color: Colors.green),
+          leading: const Icon(Icons.add_circle_outline, color: AgriMitraColors.primary),
           title: const Text('No crop set yet'),
           subtitle: const Text('Tap to tell us what you\'re growing'),
           onTap: () async {
@@ -246,12 +247,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final status = profile!['growthStatus'];
     return Card(
       margin: const EdgeInsets.all(12),
-      color: Colors.green.shade50,
+      color: AgriMitraColors.primaryLight,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
           children: [
-            const Icon(Icons.eco, color: Colors.green),
+            const Icon(Icons.eco, color: AgriMitraColors.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -290,9 +291,12 @@ class _CalendarScreenState extends State<CalendarScreen> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Column(
-                children: [
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
                   buildGrowthStatusBanner(),
                   TableCalendar(
                     firstDay: DateTime.now().subtract(const Duration(days: 365)),
@@ -308,9 +312,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       });
                     },
                     calendarStyle: const CalendarStyle(
-                      todayDecoration: BoxDecoration(color: Colors.green, shape: BoxShape.circle),
-                      selectedDecoration: BoxDecoration(color: Colors.brown, shape: BoxShape.circle),
-                      markerDecoration: BoxDecoration(color: Colors.orange, shape: BoxShape.circle),
+                      todayDecoration: BoxDecoration(color: AgriMitraColors.primary, shape: BoxShape.circle),
+                      selectedDecoration: BoxDecoration(color: AgriMitraColors.ink, shape: BoxShape.circle),
+                      markerDecoration: BoxDecoration(color: AgriMitraColors.accent, shape: BoxShape.circle),
                       markersMaxCount: 3,
                     ),
                     headerStyle: const HeaderStyle(
@@ -351,14 +355,14 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                   event['title'],
                                   style: TextStyle(
                                     decoration: isCompleted ? TextDecoration.lineThrough : null,
-                                    color: isCompleted ? Colors.grey : null,
+                                    color: isCompleted ? AgriMitraColors.inkMuted : null,
                                   ),
                                 ),
                                 subtitle: event['notes'] != null && event['notes'].toString().isNotEmpty
                                     ? Text(event['notes'])
                                     : null,
                                 trailing: isCompleted
-                                    ? const Icon(Icons.check_circle, color: Colors.green)
+                                    ? const Icon(Icons.check_circle, color: AgriMitraColors.primary)
                                     : IconButton(
                                         icon: const Icon(Icons.check_circle_outline),
                                         tooltip: 'Mark as done',
@@ -369,7 +373,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                           },
                         ),
                   const SizedBox(height: 80), // room so FAB doesn't cover last item
-                ],
+                    ],
+                  ),
+                ),
               ),
             ),
     );

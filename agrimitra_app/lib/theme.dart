@@ -7,12 +7,16 @@ class AgriMitraColors {
   static const accent = Color(0xFFE8A33D); // turmeric amber
   static const water = Color(0xFF4C7EA8); // monsoon-sky blue
   static const waterLight = Color(0xFFE8F0F6);
-  static const background = Color(0xFFF3F6EE); // sage-tinted off-white
+  static const background = Color(0xFFF8FAF5); // off-white canvas
   static const surface = Color(0xFFFFFFFF);
   static const ink = Color(0xFF2B2418); // warm soil-brown, not pure black
   static const inkMuted = Color(0xFF6B6154);
   static const critical = Color(0xFFB3413E);
   static const warning = Color(0xFFD98E2B);
+  static const sidebar = Color(0xFF0B3D2E);
+  static const sidebarMuted = Color(0xFFBFD8CC);
+  static const lightGreenBorder = Color(0xFFDCEADA);
+  static const softGreen = Color(0xFFEEF7EE);
 }
 
 class AgriMitraTheme {
