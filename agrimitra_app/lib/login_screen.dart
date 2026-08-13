@@ -102,9 +102,7 @@ class _LoginScreenState extends State<LoginScreen>
       curve: Curves.easeOutCubic,
     );
 
-    _bgFadeAnim = Tween<double>(begin: 0, end: 1).animate(
-      Tween<double>(begin: 0, end: 0.3).animate(curve),
-    );
+    _bgFadeAnim = Tween<double>(begin: 0, end: 1).animate(curve);
 
     _logoScaleAnim = Tween<double>(begin: 0.5, end: 1.0).animate(
       CurvedAnimation(
