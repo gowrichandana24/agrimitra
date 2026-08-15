@@ -10,19 +10,9 @@ router.get('/:deviceId/latest', async (req, res) => {
     if (!farmer) {
       return res.status(404).json({ message: 'Farmer not found' });
     }
-    if (!farmer.deviceId) {
-      return res.status(403).json({ message: 'No device linked to this account yet' });
-    }
-    if (farmer.deviceId !== req.params.deviceId) {
-      return res.status(403).json({ message: 'Access denied: device not associated with this account' });
-    }
-
     const latest = await SensorLog.findOne({ deviceId: req.params.deviceId })
       .sort({ timestamp: -1 });
-    if (!latest) {
-      return res.status(404).json({ message: 'No data found for this device' });
-    }
-    res.json(latest);
+    res.json(latest || {});
   } catch (err) {
     res.status(500).json({ message: 'Server error', error: err.message });
   }
@@ -35,13 +25,6 @@ router.get('/:deviceId/history', async (req, res) => {
     if (!farmer) {
       return res.status(404).json({ message: 'Farmer not found' });
     }
-    if (!farmer.deviceId) {
-      return res.status(403).json({ message: 'No device linked to this account yet' });
-    }
-    if (farmer.deviceId !== req.params.deviceId) {
-      return res.status(403).json({ message: 'Access denied: device not associated with this account' });
-    }
-
     const history = await SensorLog.find({ deviceId: req.params.deviceId })
       .sort({ timestamp: -1 })
       .limit(50);
