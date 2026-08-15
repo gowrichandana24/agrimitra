@@ -22,6 +22,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/alerts', verifyToken, alertRoutes);
 app.use('/api/calendar', verifyToken, calendarRoutes);
 
+const mqttUrl = process.env.MQTT_URL;
+console.log(`MQTT broker URL: ${mqttUrl || '(not set)'}`);
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {

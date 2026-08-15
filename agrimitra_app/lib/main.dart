@@ -8,6 +8,7 @@ import 'chat_screen.dart';
 import 'config.dart';
 import 'login_screen.dart';
 import 'calendar_screen.dart';
+import 'crop_rotation_screen.dart';
 import 'theme.dart';
 import 'localization.dart';
 import 'widgets/moisture_gauge.dart';
@@ -580,6 +581,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           onTap: () {},
                         ),
                         _buildSidebarNavItem(
+                          icon: Icons.autorenew,
+                          label: localization.t('crop_rotation'),
+                          badge: 'New',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const CropRotationScreen()),
+                            );
+                          },
+                        ),
+                        _buildSidebarNavItem(
                           icon: Icons.chat_bubble_outline,
                           label: localization.t('ai_assistant'),
                           onTap: () {
@@ -1077,6 +1089,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     required String label,
     required VoidCallback onTap,
     bool active = false,
+    String? badge,
   }) {
     final isTamil = AppLocalization.instance.isTamil;
     return Padding(
@@ -1106,6 +1119,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ),
               ),
+              if (badge != null)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AgriMitraColors.accent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    badge,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

@@ -1,0 +1,23 @@
+crop,family,nitrogen_behavior,typical_season
+Rice,Cereal,Depleter (uses N),Kharif
+Wheat,Cereal,Depleter (uses N),Kharif
+Maize,Cereal,Depleter (uses N),Kharif
+Sorghum,Cereal,Depleter (uses N),Rabi
+Pearl Millet,Cereal,Depleter (uses N),Rabi
+Finger Millet,Cereal,Depleter (uses N),Kharif
+Chickpea,Legume,Fixer (adds N),Rabi
+Lentil,Legume,Fixer (adds N),Rabi
+Pigeon Pea,Legume,Fixer (adds N),Kharif
+Black Gram,Legume,Fixer (adds N),Kharif
+Green Gram,Legume,Fixer (adds N),Rabi
+Soybean,Legume,Fixer (adds N),Kharif
+Groundnut,Oilseed,Depleter (uses N),Kharif
+Mustard,Oilseed,Depleter (uses N),Rabi
+Sunflower,Oilseed,Depleter (uses N),Rabi
+Sesame,Oilseed,Depleter (uses N),Rabi
+Cotton,Cash Crop,Depleter (uses N),Kharif
+Sugarcane,Cash Crop,Depleter (uses N),Kharif
+Tomato,Solanaceae,Depleter (uses N),Rabi
+Brinjal,Solanaceae,Depleter (uses N),Kharif
+Chili,Solanaceae,Depleter (uses N),Rabi
+Potato,Solanaceae,Depleter (uses N),Rabi

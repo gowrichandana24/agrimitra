@@ -1,10 +1,15 @@
+import os
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report
 import joblib
 
-df = pd.read_csv('Crop_recommendation.csv')
+DATASET_DIR = os.path.join(os.path.dirname(__file__), 'dataset')
+MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
+os.makedirs(MODELS_DIR, exist_ok=True)
+
+df = pd.read_csv(os.path.join(DATASET_DIR, 'crop_recommendation_dataset.csv'))
 
 X = df[['N', 'P', 'K', 'temperature', 'humidity', 'ph', 'rainfall']]
 y = df['label']
@@ -26,5 +31,6 @@ importances = pd.Series(model.feature_importances_, index=X.columns).sort_values
 print("\nFeature importance:")
 print(importances)
 
-joblib.dump(model, 'crop_model.pkl')
-print("\nModel saved as crop_model.pkl")
+model_path = os.path.join(MODELS_DIR, 'crop_rf_model.pkl')
+joblib.dump(model, model_path)
+print(f"\nModel saved to {model_path}")
