@@ -1,7 +1,7 @@
 soil_type,N_est,P_est,K_est,ph_est
-Black Soil (Regur),90,20,110,8.0
-Red Soil,60,15,70,6.2
-Alluvial Soil,110,32,90,7.0
-Sandy Soil,45,12,50,6.7
-Clay Soil,75,20,95,7.0
-Laterite Soil,50,14,60,6.0
+Black Soil,85,22,105,7.8
+Red Soil,55,13,65,6.2
+Alluvial Soil,115,35,85,7.0
+Sandy Soil,40,10,45,6.5
+Clay Soil,80,18,100,7.2
+Laterite Soil,48,11,55,5.8

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
 import 'theme.dart';
 import 'localization.dart';
@@ -13,14 +14,17 @@ class CropRotationScreen extends StatefulWidget {
 }
 
 class _CropRotationScreenState extends State<CropRotationScreen> {
+  final _formKey = GlobalKey<FormState>();
   String? _selectedSoilType;
   String? _selectedPreviousCrop;
-  final _temperatureController = TextEditingController();
-  final _humidityController = TextEditingController();
-  final _rainfallController = TextEditingController();
 
-  bool _isLoading = false;
-  String? _error;
+  double? _temperature;
+  double? _humidity;
+  double? _rainfall;
+  bool _isUsingFallbackRainfall = false;
+  bool _isLoadingWeather = false;
+  bool _isLoadingRainfall = false;
+  bool _isSubmitting = false;
   List<dynamic>? _recommendations;
 
   static const _soilTypes = [
@@ -33,38 +37,131 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
   ];
 
   static const _crops = [
-    'Rice', 'Wheat', 'Maize', 'Sorghum', 'Chickpea',
-    'Lentil', 'Soybean', 'Cotton', 'Sugarcane', 'Tomato', 'Potato',
+    'Rice', 'Wheat', 'Maize', 'Sorghum', 'Pearl Millet', 'Finger Millet',
+    'Chickpea', 'Lentil', 'Pigeon Pea', 'Black Gram', 'Green Gram',
+    'Soybean', 'Groundnut', 'Mustard', 'Sunflower', 'Sesame',
+    'Cotton', 'Sugarcane', 'Tomato', 'Brinjal', 'Chili', 'Potato',
   ];
 
+  // Regional seasonal rainfall fallback (mm) by soil type — environmental, not crop-specific
+  static const Map<String, double> _fallbackRainfall = {
+    'Black Soil': 600,
+    'Red Soil': 500,
+    'Alluvial Soil': 1000,
+    'Sandy Soil': 300,
+    'Clay Soil': 1000,
+    'Laterite Soil': 1250,
+  };
+
   @override
-  void dispose() {
-    _temperatureController.dispose();
-    _humidityController.dispose();
-    _rainfallController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _fetchWeatherData();
+  }
+
+  Future<Map<String, String>> _getAuthHeaders() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    return {'Authorization': 'Bearer $token'};
+  }
+
+  Future<void> _fetchWeatherData() async {
+    setState(() => _isLoadingWeather = true);
+    try {
+      final headers = await _getAuthHeaders();
+      final response = await http.get(
+        Uri.parse('${Config.apiBaseUrl}/api/sensors/esp32-01/latest'),
+        headers: headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _temperature = (data['temperature'] as num?)?.toDouble();
+            _humidity = (data['humidity'] as num?)?.toDouble();
+            _isLoadingWeather = false;
+          });
+        }
+      } else {
+        debugPrint('[Weather] HTTP ${response.statusCode}: ${response.body}');
+        if (mounted) setState(() => _isLoadingWeather = false);
+      }
+    } catch (e) {
+      debugPrint('[Weather] Fetch failed: $e');
+      if (mounted) setState(() => _isLoadingWeather = false);
+    }
+  }
+
+  Future<void> _fetchRainfallEstimate(String soilType) async {
+    setState(() {
+      _isLoadingRainfall = true;
+      _rainfall = null;
+      _isUsingFallbackRainfall = false;
+    });
+    try {
+      final response = await http.get(
+        Uri.parse('http://localhost:5001/rainfall-estimate?soil_type=$soilType'),
+      ).timeout(const Duration(seconds: 5));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final value = (data['rainfall_mm'] as num?)?.toDouble();
+        if (mounted) {
+          setState(() {
+            _rainfall = value;
+            _isUsingFallbackRainfall = false;
+            _isLoadingRainfall = false;
+          });
+        }
+      } else {
+        debugPrint('[Rainfall] HTTP ${response.statusCode}: ${response.body}');
+        _applyFallbackRainfall(soilType);
+      }
+    } catch (e) {
+      debugPrint('[Rainfall] Fetch failed: $e');
+      _applyFallbackRainfall(soilType);
+    }
+  }
+
+  void _applyFallbackRainfall(String soilType) {
+    final fallback = _fallbackRainfall[soilType];
+    if (fallback != null && mounted) {
+      setState(() {
+        _rainfall = fallback;
+        _isUsingFallbackRainfall = true;
+        _isLoadingRainfall = false;
+      });
+    } else if (mounted) {
+      setState(() {
+        _rainfall = 700;
+        _isUsingFallbackRainfall = true;
+        _isLoadingRainfall = false;
+      });
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
   }
 
   Future<void> _getRecommendation() async {
+    if (!_formKey.currentState!.validate()) return;
+
     if (_selectedSoilType == null || _selectedPreviousCrop == null) {
-      setState(() => _error = 'Please select both soil type and previous crop');
+      _showSnackBar('Please select both soil type and previous crop');
+      return;
+    }
+    if (_temperature == null || _humidity == null) {
+      _showSnackBar('Weather data not available. Please try again.');
       return;
     }
 
-    final temp = double.tryParse(_temperatureController.text);
-    final hum = double.tryParse(_humidityController.text);
-    final rain = double.tryParse(_rainfallController.text);
+    // Use fallback rainfall if API failed — don't block the feature
+    final rainfallToUse = _rainfall ?? _fallbackRainfall[_selectedSoilType!] ?? 700;
 
-    if (temp == null || hum == null || rain == null) {
-      setState(() => _error = 'Please enter valid numeric values for temperature, humidity, and rainfall');
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _error = null;
-      _recommendations = null;
-    });
+    setState(() => _isSubmitting = true);
 
     try {
       final response = await http.post(
@@ -73,29 +170,36 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
         body: jsonEncode({
           'soil_type': _selectedSoilType,
           'previous_crop': _selectedPreviousCrop,
-          'temperature': temp,
-          'humidity': hum,
-          'rainfall': rain,
+          'temperature': _temperature,
+          'humidity': _humidity,
+          'rainfall': rainfallToUse,
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
+
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         setState(() {
           _recommendations = data['recommendations'] as List<dynamic>?;
-          _isLoading = false;
+          _isSubmitting = false;
         });
       } else {
-        setState(() {
-          _error = 'Crop model service returned an error (${response.statusCode})';
-          _isLoading = false;
-        });
+        String msg;
+        try {
+          final body = jsonDecode(response.body);
+          msg = body['error']?.toString() ?? 'Server error (${response.statusCode})';
+        } catch (_) {
+          msg = 'Server error (${response.statusCode})';
+        }
+        setState(() => _isSubmitting = false);
+        _showSnackBar(msg);
       }
     } catch (e) {
-      setState(() {
-        _error = 'Crop model service unavailable. Make sure the Flask server is running on port 5001.';
-        _isLoading = false;
-      });
+      debugPrint('[Recommend] Request failed: $e');
+      if (!mounted) return;
+      setState(() => _isSubmitting = false);
+      _showSnackBar('Crop model service unavailable — make sure the model server is running');
     }
   }
 
@@ -103,219 +207,152 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
   Widget build(BuildContext context) {
     final localization = AppLocalization.instance;
 
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(localization.t('crop_rotation')),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new, color: AgriMitraColors.ink),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                const SizedBox(width: 4),
                 Text(
-                  localization.t('crop_rotation'),
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    color: AgriMitraColors.ink,
+                  localization.t('crop_rotation_subtitle'),
+                  style: const TextStyle(fontSize: 14, color: AgriMitraColors.inkMuted),
+                ),
+                const SizedBox(height: 24),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedSoilType,
+                  decoration: const InputDecoration(
+                    labelText: 'Soil Type',
+                    prefixIcon: Icon(Icons.landscape, size: 20),
+                  ),
+                  items: _soilTypes
+                      .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                      .toList(),
+                  onChanged: (v) {
+                    setState(() => _selectedSoilType = v);
+                    if (v != null) _fetchRainfallEstimate(v);
+                  },
+                  validator: (v) => v == null ? 'Please select a soil type' : null,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  initialValue: _selectedPreviousCrop,
+                  decoration: const InputDecoration(
+                    labelText: 'Previous Crop',
+                    prefixIcon: Icon(Icons.eco_outlined, size: 20),
+                  ),
+                  items: _crops
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _selectedPreviousCrop = v),
+                  validator: (v) => v == null ? 'Please select a previous crop' : null,
+                ),
+                const SizedBox(height: 20),
+                _buildConditionsSummary(),
+                const SizedBox(height: 28),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isSubmitting ? null : _getRecommendation,
+                    icon: _isSubmitting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.eco_outlined),
+                    label: Text(
+                      _isSubmitting ? '...' : localization.t('get_recommendation'),
+                    ),
                   ),
                 ),
+                const SizedBox(height: 32),
+                if (_recommendations != null) ...[
+                  const Text(
+                    'Recommendations',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AgriMitraColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ..._recommendations!.map((rec) => _buildResultCard(rec)),
+                ],
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              localization.t('crop_rotation_subtitle'),
-              style: const TextStyle(fontSize: 14, color: AgriMitraColors.inkMuted),
-            ),
-            const SizedBox(height: 28),
-            _buildDropdown(
-              label: localization.t('soil_type'),
-              value: _selectedSoilType,
-              items: _soilTypes,
-              onChanged: (v) => setState(() => _selectedSoilType = v),
-            ),
-            const SizedBox(height: 16),
-            _buildDropdown(
-              label: localization.t('previous_crop'),
-              value: _selectedPreviousCrop,
-              items: _crops,
-              onChanged: (v) => setState(() => _selectedPreviousCrop = v),
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(
-              label: localization.t('temperature_c'),
-              controller: _temperatureController,
-              icon: Icons.thermostat,
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(
-              label: localization.t('humidity_percent'),
-              controller: _humidityController,
-              icon: Icons.water_drop_outlined,
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(
-              label: localization.t('rainfall_mm'),
-              controller: _rainfallController,
-              icon: Icons.cloud_outlined,
-            ),
-            const SizedBox(height: 28),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _getRecommendation,
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Icon(Icons.eco_outlined),
-                label: Text(
-                  _isLoading ? '...' : localization.t('get_recommendation'),
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ),
-            const SizedBox(height: 32),
-            if (_error != null) _buildErrorCard(_error!),
-            if (_recommendations != null) _buildResultsList(_recommendations!),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildDropdown({
-    required String label,
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AgriMitraColors.lightGreenBorder, width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AgriMitraColors.inkMuted,
-            ),
-          ),
-          const SizedBox(height: 8),
-          DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              hint: Text(
-                'Select...',
-                style: TextStyle(color: AgriMitraColors.inkMuted),
-              ),
-              items: items.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: onChanged,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _buildConditionsSummary() {
+    final parts = <String>[];
 
-  Widget _buildTextField({
-    required String label,
-    required TextEditingController controller,
-    required IconData icon,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AgriMitraColors.lightGreenBorder, width: 1),
-      ),
-      child: TextField(
-        controller: controller,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(
-          prefixIcon: Icon(icon, color: AgriMitraColors.primary, size: 20),
-          labelText: label,
-          labelStyle: const TextStyle(color: AgriMitraColors.inkMuted),
-          border: InputBorder.none,
-          filled: false,
-        ),
-      ),
-    );
-  }
+    if (_isLoadingWeather) {
+      parts.add('Fetching weather...');
+    } else if (_temperature != null && _humidity != null) {
+      parts.add('${_temperature!.toStringAsFixed(1)}°C, ${_humidity!.toStringAsFixed(0)}% humidity');
+    } else {
+      parts.add('Weather data unavailable');
+    }
 
-  Widget _buildErrorCard(String message) {
+    if (_isLoadingRainfall) {
+      parts.add('Estimating rainfall...');
+    } else if (_rainfall != null && _selectedPreviousCrop != null) {
+      final label = _isUsingFallbackRainfall ? 'Seasonal avg' : 'Estimated';
+      parts.add('~${_rainfall!.toStringAsFixed(0)}mm rainfall ($label)');
+    } else if (_selectedPreviousCrop != null) {
+      parts.add('Rainfall estimate unavailable');
+    }
+
+    if (parts.isEmpty) return const SizedBox.shrink();
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFFDF2F2),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AgriMitraColors.critical.withValues(alpha: 0.3), width: 1),
+        color: AgriMitraColors.softGreen,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AgriMitraColors.lightGreenBorder),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AgriMitraColors.critical.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.error_outline, color: AgriMitraColors.critical, size: 22),
-          ),
-          const SizedBox(width: 14),
+          const Icon(Icons.info_outline, size: 18, color: AgriMitraColors.primary),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
-              message,
-              style: const TextStyle(fontSize: 14, color: AgriMitraColors.critical),
+              parts.join(' · '),
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AgriMitraColors.primary,
+              ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildResultsList(List<dynamic> recommendations) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'Recommendations',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: AgriMitraColors.ink,
-          ),
-        ),
-        const SizedBox(height: 12),
-        ...recommendations.map((rec) => _buildResultCard(rec)),
-      ],
     );
   }
 
   Widget _buildResultCard(dynamic rec) {
     final rank = rec['rank'] as int;
     final crop = rec['crop'] as String;
-    final confidence = (rec['confidence'] as num).toDouble();
-    final reason = rec['reason'] as String;
-    final isExcluded = reason.toString().toLowerCase().startsWith('excluded');
+    final overallFit = (rec['overall_fit_score'] as num).toInt();
+    final reason = rec['rotation_fit_reason'] as String;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -323,12 +360,7 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isExcluded
-              ? AgriMitraColors.warning.withValues(alpha: 0.4)
-              : AgriMitraColors.lightGreenBorder,
-          width: 1,
-        ),
+        border: Border.all(color: AgriMitraColors.lightGreenBorder),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF0B3D2E).withValues(alpha: 0.04),
@@ -343,18 +375,16 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: isExcluded
-                  ? AgriMitraColors.warning.withValues(alpha: 0.12)
-                  : AgriMitraColors.primaryLight,
+              color: AgriMitraColors.primaryLight,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: Text(
                 '#$rank',
-                style: TextStyle(
+                style: const TextStyle(
                   fontWeight: FontWeight.w800,
                   fontSize: 14,
-                  color: isExcluded ? AgriMitraColors.warning : AgriMitraColors.primary,
+                  color: AgriMitraColors.primary,
                 ),
               ),
             ),
@@ -382,7 +412,7 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        '${(confidence * 100).toStringAsFixed(0)}%',
+                        'Overall Fit: $overallFit%',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -405,10 +435,7 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
               ],
             ),
           ),
-          if (isExcluded)
-            const Icon(Icons.block, color: AgriMitraColors.warning, size: 18)
-          else
-            const Icon(Icons.check_circle, color: AgriMitraColors.primary, size: 18),
+          const Icon(Icons.check_circle, color: AgriMitraColors.primary, size: 18),
         ],
       ),
     );
