@@ -9,6 +9,7 @@ import 'config.dart';
 import 'login_screen.dart';
 import 'calendar_screen.dart';
 import 'crop_rotation_screen.dart';
+import 'price_prediction_screen.dart';
 import 'theme.dart';
 import 'localization.dart';
 import 'widgets/moisture_gauge.dart';
@@ -588,6 +589,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const CropRotationScreen()),
+                            );
+                          },
+                        ),
+                        _buildSidebarNavItem(
+                          icon: Icons.currency_rupee,
+                          label: localization.t('price_prediction'),
+                          badge: 'New',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const PricePredictionScreen()),
                             );
                           },
                         ),

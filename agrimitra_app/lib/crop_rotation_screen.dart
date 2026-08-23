@@ -349,95 +349,191 @@ class _CropRotationScreenState extends State<CropRotationScreen> {
   }
 
   Widget _buildResultCard(dynamic rec) {
+    return _ResultCardWidget(rec: rec);
+  }
+}
+
+class _ResultCardWidget extends StatefulWidget {
+  final dynamic rec;
+  const _ResultCardWidget({required this.rec});
+
+  @override
+  State<_ResultCardWidget> createState() => _ResultCardWidgetState();
+}
+
+class _ResultCardWidgetState extends State<_ResultCardWidget> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final rec = widget.rec;
     final rank = rec['rank'] as int;
     final crop = rec['crop'] as String;
     final overallFit = (rec['overall_fit_score'] as num).toInt();
-    final reason = rec['rotation_fit_reason'] as String;
+    final expectedBenefit = rec['expected_benefit'] as String;
+    final breakdown = rec['score_breakdown'] as Map<String, dynamic>;
+    final reasons = (rec['reasons'] as List<dynamic>).cast<String>();
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AgriMitraColors.lightGreenBorder),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF0B3D2E).withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AgriMitraColors.primaryLight,
-              borderRadius: BorderRadius.circular(12),
+    return GestureDetector(
+      onTap: () => setState(() => _expanded = !_expanded),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AgriMitraColors.lightGreenBorder),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0B3D2E).withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
-            child: Center(
-              child: Text(
-                '#$rank',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
-                  color: AgriMitraColors.primary,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Text(
-                      crop,
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AgriMitraColors.primaryLight,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      '#$rank',
                       style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: AgriMitraColors.ink,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        color: AgriMitraColors.primary,
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: AgriMitraColors.primaryLight,
-                        borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            crop,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AgriMitraColors.ink,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AgriMitraColors.primaryLight,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              'Overall Fit: $overallFit%',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: AgriMitraColors.primary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      child: Text(
-                        'Overall Fit: $overallFit%',
+                      const SizedBox(height: 4),
+                      Text(
+                        expectedBenefit,
                         style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: AgriMitraColors.primary,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  color: AgriMitraColors.inkMuted,
+                  size: 20,
+                ),
+              ],
+            ),
+            if (_expanded) ...[
+              const SizedBox(height: 16),
+              const Divider(height: 1, color: AgriMitraColors.lightGreenBorder),
+              const SizedBox(height: 16),
+              _buildBreakdownBar('Model Confidence', breakdown['model_confidence'] as int),
+              const SizedBox(height: 8),
+              _buildBreakdownBar('Soil Suitability', breakdown['soil_suitability'] as int),
+              const SizedBox(height: 8),
+              _buildBreakdownBar('Rotation Benefit', breakdown['rotation_benefit'] as int),
+              const SizedBox(height: 16),
+              ...reasons.map((r) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('• ', style: TextStyle(color: AgriMitraColors.primary, fontWeight: FontWeight.w700)),
+                    Expanded(
+                      child: Text(
+                        r,
+                        style: const TextStyle(fontSize: 12, color: AgriMitraColors.inkMuted),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  reason,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: AgriMitraColors.inkMuted,
-                  ),
-                ),
-              ],
+              )),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBreakdownBar(String label, int value) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: AgriMitraColors.inkMuted),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: value / 100,
+              backgroundColor: AgriMitraColors.lightGreenBorder,
+              valueColor: const AlwaysStoppedAnimation<Color>(AgriMitraColors.primary),
+              minHeight: 6,
             ),
           ),
-          const Icon(Icons.check_circle, color: AgriMitraColors.primary, size: 18),
-        ],
-      ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 32,
+          child: Text(
+            '$value%',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AgriMitraColors.primary,
+            ),
+            textAlign: TextAlign.right,
+          ),
+        ),
+      ],
     );
   }
 }

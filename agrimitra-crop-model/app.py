@@ -16,6 +16,24 @@ model = joblib.load(os.path.join(MODELS_DIR, 'crop_rf_model.pkl'))
 
 soil_df = pd.read_csv(os.path.join(DATASET_DIR, 'soil_npk_ph_lookup.csv'))
 rotation_df = pd.read_csv(os.path.join(DATASET_DIR, 'crop_family_rotation_rules.csv'))
+suitability_df = pd.read_csv(os.path.join(DATASET_DIR, 'crop_soil_suitability_matrix.csv'))
+
+# {(crop_lower, soil_type): {'fao_class': ..., 'score': ..., 'justification': ...}}
+SUITABILITY_MATRIX = {}
+for _, row in suitability_df.iterrows():
+    key = (row['crop'].strip().lower(), row['soil_type'].strip())
+    SUITABILITY_MATRIX[key] = {
+        'fao_class': row['fao_class'],
+        'score': int(row['suitability_score']),
+        'justification': row['justification'],
+    }
+
+
+def get_soil_suitability_score(crop, soil_type):
+    """Return graded FAO suitability score (0-100) for a crop on a soil type."""
+    key = (crop.strip().lower(), soil_type.strip())
+    entry = SUITABILITY_MATRIX.get(key)
+    return entry['score'] if entry else 40  # default S3 if missing
 
 CROP_RANGES = {
     'Rice': (152, 300), 'Wheat': (50, 100), 'Maize': (60, 110),
@@ -45,7 +63,7 @@ NITROGEN_DEPLETERS = {
 }
 NITROGEN_FIXERS = {
     'Chickpea', 'Lentil', 'Pigeon Pea', 'Black Gram',
-    'Green Gram', 'Soybean',
+    'Green Gram', 'Soybean', 'Groundnut',
 }
 LEGUMES = NITROGEN_FIXERS
 
@@ -59,6 +77,8 @@ SOIL_SUITABLE_CROPS = {
     'Laterite Soil': ['Cotton', 'Rice', 'Wheat', 'Black Gram', 'Green Gram'],
 }
 
+TIER_SCORE = {-3: 100, -2: 67, -1: 33, 0: 0}
+
 
 def estimate_soil_values(soil_type):
     match = soil_df[soil_df['soil_type'].str.lower() == soil_type.strip().lower()]
@@ -69,49 +89,160 @@ def estimate_soil_values(soil_type):
     return {'N': row['N_est'], 'P': row['P_est'], 'K': row['K_est'], 'ph': row['ph_est']}
 
 
-def _get_rotation_reason(crop, previous_crop, soil_type):
-    prev_is_depleter = previous_crop in NITROGEN_DEPLETERS
-    crop_is_legume = crop in LEGUMES
-    suitable_set = set(SOIL_SUITABLE_CROPS.get(soil_type, []))
-    soil_match = crop in suitable_set
-
-    if crop_is_legume and prev_is_depleter:
-        base = f"Nitrogen-fixing legume, ideal after nitrogen-depleting {previous_crop}"
-        return f"{base}, well-suited for {soil_type}" if soil_match else base
-
-    if previous_crop in LEGUMES and crop not in LEGUMES:
-        base = f"Non-legume benefits from nitrogen fixed by {previous_crop}"
-        return f"{base}, well-suited for {soil_type}" if soil_match else base
-
-    crop_match = rotation_df[rotation_df['crop'].str.lower() == crop.lower()]
-    prev_match = rotation_df[rotation_df['crop'].str.lower() == previous_crop.lower()]
-    if not crop_match.empty and not prev_match.empty:
-        if crop_match.iloc[0]['family'] != prev_match.iloc[0]['family']:
-            base = f"Suitable rotation: different family from {previous_crop}"
-            return f"{base}, well-suited for {soil_type}" if soil_match else base
-
-    if soil_match:
-        return f"Agronomically suited for {soil_type}, rotation-compatible with {previous_crop}"
-
-    return f"RF model pick, rotation-compatible with {previous_crop}"
+def _get_crop_family(crop):
+    """Return the plant family for a crop from rotation_df."""
+    match = rotation_df[rotation_df['crop'].str.lower() == crop.lower()]
+    return match.iloc[0]['family'] if not match.empty else None
 
 
-TIER_SCORE = {-3: 100, -2: 67, -1: 33, 0: 0}
+def _get_nitrogen_behavior(crop):
+    """Return 'Fixer', 'Depleter', or 'Neutral' for a crop."""
+    if crop in NITROGEN_FIXERS:
+        return 'Fixer'
+    if crop in NITROGEN_DEPLETERS:
+        return 'Depleter'
+    return 'Neutral'
 
 
-def _compute_overall_fit_score(crop, rf_confidence, soil_type, previous_crop):
-    """Compute a single 0-100 score from all ranking factors.
-
-    Rotation tier is the primary factor (78% weight) to ensure strict
-    monotonicity with the final ranking. Soil-suitability (7%) and
-    RF confidence (15%) are secondary tiebreakers within each tier.
-    """
+def _get_score_breakdown(crop, rf_confidence, soil_type, previous_crop):
+    """Return the three-component score breakdown (each 0-100)."""
     tier = _rotation_sort_key(crop, previous_crop, soil_type)
     rotation_score = TIER_SCORE[tier]
-    soil_score = 100 if crop in SOIL_SUITABLE_CROPS.get(soil_type, []) else 0
-    rf_score = rf_confidence * 100
-    overall = rotation_score * 0.78 + soil_score * 0.07 + rf_score * 0.15
-    return round(overall)
+    soil_score = get_soil_suitability_score(crop, soil_type)
+    rf_score = round(rf_confidence * 100)
+    return {
+        'model_confidence': rf_score,
+        'soil_suitability': soil_score,
+        'rotation_benefit': rotation_score,
+    }
+
+
+def _compute_overall_fit_score(score_breakdown):
+    """Derive overall_fit_score (0-100) from the three breakdown components.
+
+    Uses exact weights: 40% model_confidence, 35% soil_suitability,
+    25% rotation_benefit. The result always matches the breakdown.
+    """
+    mc = score_breakdown['model_confidence']
+    ss = score_breakdown['soil_suitability']
+    rb = score_breakdown['rotation_benefit']
+    return round(0.40 * mc + 0.35 * ss + 0.25 * rb)
+
+
+def _get_dynamic_reasons(crop, previous_crop, soil_type, rainfall):
+    """Generate a list of specific, data-driven reason strings."""
+    reasons = []
+
+    # 1. Family rotation
+    crop_family = _get_crop_family(crop)
+    prev_family = _get_crop_family(previous_crop)
+    if crop_family and prev_family:
+        if crop_family != prev_family:
+            reasons.append(
+                f"Different plant family from {previous_crop} ({prev_family}) "
+                f"— breaks pest and disease buildup"
+            )
+        else:
+            reasons.append(
+                f"Same family as {previous_crop} ({crop_family}) "
+                f"— rotate with caution to avoid soil-borne disease"
+            )
+
+    # 2. Nitrogen behavior
+    crop_nitrogen = _get_nitrogen_behavior(crop)
+    prev_nitrogen = _get_nitrogen_behavior(previous_crop)
+    if crop_nitrogen == 'Fixer' and prev_nitrogen == 'Depleter':
+        reasons.append(
+            f"Nitrogen behavior: {crop_nitrogen} — "
+            f"restores nitrogen depleted by {previous_crop}"
+        )
+    elif crop_nitrogen == 'Depleter' and prev_nitrogen == 'Fixer':
+        reasons.append(
+            f"Nitrogen behavior: {crop_nitrogen} — "
+            f"consumes nitrogen enriched by {previous_crop}"
+        )
+    elif crop_nitrogen == 'Fixer' and prev_nitrogen == 'Fixer':
+        reasons.append(
+            f"Nitrogen behavior: {crop_nitrogen} — "
+            f"consecutive fixers build strong soil nitrogen reserves"
+        )
+    elif crop_nitrogen == 'Depleter' and prev_nitrogen == 'Depleter':
+        reasons.append(
+            f"Nitrogen behavior: {crop_nitrogen} — "
+            f"consecutive depleters may require extra fertiliser input"
+        )
+    elif crop_nitrogen == 'Fixer':
+        reasons.append(
+            f"Nitrogen behavior: {crop_nitrogen} — "
+            f"improves soil fertility for future crops"
+        )
+    else:
+        reasons.append(
+            f"Nitrogen behavior: {crop_nitrogen} — "
+            f"standard nitrogen management with {previous_crop}"
+        )
+
+    # 3. Soil suitability (graded FAO classification)
+    key = (crop.strip().lower(), soil_type.strip())
+    entry = SUITABILITY_MATRIX.get(key)
+    if entry:
+        fao = entry['fao_class']
+        score = entry['score']
+        if score >= 70:
+            label = "Well-suited"
+        elif score >= 40:
+            label = "Marginally suited"
+        else:
+            label = "Not suited"
+        reasons.append(
+            f"Soil suitability: {label} ({fao}, score {score}/100) "
+            f"- {entry['justification']}"
+        )
+
+    # 4. Water requirement vs regional rainfall
+    crop_range = CROP_RANGES.get(crop)
+    if crop_range and rainfall is not None:
+        low, high = crop_range
+        regional = REGIONAL_RAINFALL.get(soil_type, {})
+        reg_label = regional.get('label', 'the region')
+        if rainfall >= low and rainfall <= high:
+            reasons.append(
+                f"Estimated water need ({low}-{high}mm) fits the region's "
+                f"~{int(rainfall)}mm ({reg_label})"
+            )
+        elif rainfall < low:
+            reasons.append(
+                f"Needs {low}-{high}mm water — region averages ~{int(rainfall)}mm "
+                f"({reg_label}), irrigation may be needed"
+            )
+        else:
+            reasons.append(
+                f"Needs {low}-{high}mm water — region averages ~{int(rainfall)}mm "
+                f"({reg_label}), good drainage recommended"
+            )
+
+    return reasons
+
+
+def _get_expected_benefit(crop, previous_crop, soil_type):
+    """Return a short one-line practical takeaway."""
+    crop_nitrogen = _get_nitrogen_behavior(crop)
+    prev_nitrogen = _get_nitrogen_behavior(previous_crop)
+    crop_family = _get_crop_family(crop)
+    prev_family = _get_crop_family(previous_crop)
+    soil_score = get_soil_suitability_score(crop, soil_type)
+
+    if crop_nitrogen == 'Fixer' and prev_nitrogen == 'Depleter':
+        return f"Restores nitrogen depleted by {previous_crop}"
+    if crop_nitrogen == 'Depleter' and prev_nitrogen == 'Fixer':
+        return f"Consumes nitrogen enriched by {previous_crop}"
+    if crop_family and prev_family and crop_family != prev_family:
+        return f"Diversifies pest exposure while matching soil moisture needs"
+    if soil_score >= 70:
+        return f"Naturally thrives in {soil_type}, reducing input costs"
+    if soil_score >= 40:
+        return f"Can grow on {soil_type} with moderate soil amendments"
+    return f"High-confidence model pick despite limited soil suitability"
 
 
 def _rotation_sort_key(crop, previous_crop, soil_type):
@@ -161,7 +292,8 @@ def recommend_crop(soil_type, previous_crop, temperature, humidity, rainfall):
 
     result = []
     for rank, crop in enumerate(final, start=1):
-        overall = _compute_overall_fit_score(crop, rf_confidences[crop], soil_type, previous_crop)
+        breakdown = _get_score_breakdown(crop, rf_confidences[crop], soil_type, previous_crop)
+        overall = _compute_overall_fit_score(breakdown)
         # Tiebreaker ensures strictly monotonic integer scores after rounding.
         # Rank 1 gets +2, rank 2 gets +1, rank 3 gets +0.
         overall += (len(final) - rank)
@@ -169,8 +301,9 @@ def recommend_crop(soil_type, previous_crop, temperature, humidity, rainfall):
             'rank': rank,
             'crop': crop,
             'overall_fit_score': round(overall),
-            'model_confidence': rf_confidences[crop],
-            'rotation_fit_reason': _get_rotation_reason(crop, previous_crop, soil_type),
+            'score_breakdown': breakdown,
+            'reasons': _get_dynamic_reasons(crop, previous_crop, soil_type, rainfall),
+            'expected_benefit': _get_expected_benefit(crop, previous_crop, soil_type),
         })
 
     return result

@@ -2,3 +2,26 @@
 .env.*
 *.pkl
 node_modules/
+
+# Trained models
+agrimitra-price-model/models/*.h5
+agrimitra-crop-model/models/*.pkl
+agrimitra-crop-model/crop_model.pkl
+
+# Large datasets (keep the generation scripts, not the generated data)
+agrimitra-price-model/dataset/agmarknet_prices/*.csv
+agrimitra-price-model/dataset/crop_image_recognition/
+agrimitra-crop-model/dataset/*.csv
+agrimitra-crop-model/Crop_recommendation.csv
+
+# Logs
+*.log
+server.pid
+
+# Scratch/debug files
+locations.json
+probe.json
+probe2.json
+
+# Python bytecode
+__pycache__/
