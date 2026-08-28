@@ -44,6 +44,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String selectedLanguage = 'en-IN';
   Set<String> availableSttLocales = {};
   bool sttLocalesLoaded = false;
+  bool finalTranscriptSubmitted = false;
 
   final String chatUrl = "${Config.apiBaseUrl}/api/chat/esp32-01/ask";
   final String historyUrl = "${Config.apiBaseUrl}/api/chat/history";
@@ -62,6 +63,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final prefs = await SharedPreferences.getInstance();
     final savedLang = prefs.getString('preferredLanguage');
     if (savedLang != null && supportedLanguages.containsKey(savedLang)) {
+      if (!mounted) return;
       setState(() => selectedLanguage = savedLang);
     }
 
@@ -77,6 +79,7 @@ class _ChatScreenState extends State<ChatScreen> {
           final data = jsonDecode(response.body);
           final backendLang = data['preferredLanguage'];
           if (backendLang != null && supportedLanguages.containsKey(backendLang)) {
+            if (!mounted) return;
             setState(() => selectedLanguage = backendLang);
             await prefs.setString('preferredLanguage', backendLang);
           }
@@ -117,6 +120,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
+        if (!mounted) return;
         setState(() {
           messages.addAll(data.map((m) => ChatMessage(
                 text: m['text'],
@@ -127,64 +131,92 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       print('Failed to load chat history: $e');
     } finally {
-      setState(() => isLoadingHistory = false);
+      if (mounted) {
+        setState(() => isLoadingHistory = false);
+      }
     }
   }
 
   Future<void> initSpeech() async {
-    speechAvailable = await speech.initialize(
-      onStatus: (status) {
-        if (status == 'done' || status == 'notListening') {
-          setState(() => isListening = false);
+    try {
+      speechAvailable = await speech.initialize(
+        onStatus: (status) {
+          if (mounted && (status == 'done' || status == 'notListening')) {
+            setState(() => isListening = false);
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() => isListening = false);
+          }
+        },
+      );
+      if (speechAvailable) {
+        final locales = await speech.locales();
+        if (mounted) {
+          setState(() {
+            availableSttLocales = locales.map((l) => l.localeId).toSet();
+            sttLocalesLoaded = true;
+          });
         }
-      },
-      onError: (error) => setState(() => isListening = false),
-    );
-    if (speechAvailable) {
-      final locales = await speech.locales();
-      setState(() {
-        availableSttLocales = locales.map((l) => l.localeId).toSet();
-        sttLocalesLoaded = true;
-      });
+      }
+    } catch (_) {
+      speechAvailable = false;
+      if (mounted) {
+        setState(() {
+          availableSttLocales = {};
+          sttLocalesLoaded = true;
+        });
+      }
     }
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void initTts() {
     tts.setStartHandler(() {
-      setState(() => isSpeaking = true);
+      if (mounted) setState(() => isSpeaking = true);
     });
     tts.setCompletionHandler(() {
-      setState(() => isSpeaking = false);
+      if (mounted) setState(() => isSpeaking = false);
     });
     tts.setCancelHandler(() {
-      setState(() => isSpeaking = false);
+      if (mounted) setState(() => isSpeaking = false);
     });
     tts.setErrorHandler((msg) {
-      setState(() => isSpeaking = false);
+      if (mounted) setState(() => isSpeaking = false);
     });
+  }
+
+  String normalizeLocale(String localeCode) {
+    return localeCode.replaceAll('_', '-').toLowerCase();
   }
 
   bool isSttLocaleSupported(String localeCode) {
     if (!sttLocalesLoaded) return false;
-    // Check exact match first
-    if (availableSttLocales.contains(localeCode)) return true;
-    // Check language-only match (e.g. "hi" matches "hi-IN")
-    final langOnly = localeCode.split('-').first;
-    return availableSttLocales.any((l) => l.startsWith(langOnly));
+    final normalizedLocale = normalizeLocale(localeCode);
+    final langOnly = normalizedLocale.split('-').first;
+    return availableSttLocales.any((locale) {
+      final normalizedAvailable = normalizeLocale(locale);
+      return normalizedAvailable == normalizedLocale ||
+          normalizedAvailable.split('-').first == langOnly;
+    });
   }
 
   String getSttLocale(String localeCode) {
-    if (availableSttLocales.contains(localeCode)) return localeCode;
-    final langOnly = localeCode.split('-').first;
+    final normalizedLocale = normalizeLocale(localeCode);
+    final langOnly = normalizedLocale.split('-').first;
     final match = availableSttLocales.firstWhere(
-      (l) => l.startsWith(langOnly),
-      orElse: () => 'en-IN',
+      (locale) => normalizeLocale(locale) == normalizedLocale,
+      orElse: () => availableSttLocales.firstWhere(
+        (locale) => normalizeLocale(locale).split('-').first == langOnly,
+      ),
     );
     return match;
   }
 
-  void startListening() async {
+  Future<void> startListening() async {
     if (!speechAvailable) return;
 
     if (!isSttLocaleSupported(selectedLanguage)) {
@@ -201,23 +233,35 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final locale = getSttLocale(selectedLanguage);
-    setState(() => isListening = true);
-    await speech.listen(
-      onResult: (result) {
-        setState(() {
-          controller.text = result.recognizedWords;
-        });
-        if (result.finalResult) {
-          sendMessage();
-        }
-      },
-      localeId: locale,
-    );
+    finalTranscriptSubmitted = false;
+    if (mounted) setState(() => isListening = true);
+    try {
+      await speech.listen(
+        onResult: (result) {
+          if (!mounted) return;
+          setState(() {
+            controller.text = result.recognizedWords;
+          });
+          if (result.finalResult && !finalTranscriptSubmitted) {
+            finalTranscriptSubmitted = true;
+            sendMessage();
+          }
+        },
+        localeId: locale,
+      );
+    } catch (_) {
+      if (mounted) {
+        setState(() => isListening = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Voice input could not be started. You can still type.')),
+        );
+      }
+    }
   }
 
   void stopListening() {
     speech.stop();
-    setState(() => isListening = false);
+    if (mounted) setState(() => isListening = false);
   }
 
   Future<void> speakText(String text) async {
@@ -245,7 +289,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> stopSpeaking() async {
     await tts.stop();
-    setState(() => isSpeaking = false);
+    if (mounted) setState(() => isSpeaking = false);
   }
 
   Future<void> sendMessage() async {
@@ -276,26 +320,40 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        setState(() {
-          messages.add(ChatMessage(text: data['answer'], isUser: false));
-        });
+        if (mounted) {
+          setState(() {
+            messages.add(ChatMessage(text: data['answer'], isUser: false));
+          });
+        }
         if (autoSpeak) {
           speakText(data['answer']);
         }
       } else {
         print('Chat request failed: ${response.statusCode} - ${response.body}');
+        if (mounted) {
+          setState(() {
+            messages.add(ChatMessage(text: "Connection issue. Please try again.", isUser: false));
+          });
+        }
+      }
+    } catch (e) {
+      print('Chat request exception: $e');
+      if (mounted) {
         setState(() {
           messages.add(ChatMessage(text: "Connection issue. Please try again.", isUser: false));
         });
       }
-    } catch (e) {
-      print('Chat request exception: $e');
-      setState(() {
-        messages.add(ChatMessage(text: "Connection issue. Please try again.", isUser: false));
-      });
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => isLoading = false);
     }
+  }
+
+  @override
+  void dispose() {
+    speech.stop();
+    tts.stop();
+    controller.dispose();
+    super.dispose();
   }
 
   void showLanguageSelector() {
