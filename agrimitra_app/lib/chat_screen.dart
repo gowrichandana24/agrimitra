@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -153,6 +154,12 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (speechAvailable) {
         final locales = await speech.locales();
+        print('=== SPEECH LOCALES DEBUG ===');
+        print('Total locales returned: ${locales.length}');
+        for (final loc in locales) {
+          print('  localeId="${loc.localeId}" name="${loc.name}"');
+        }
+        print('=== END LOCALES DEBUG ===');
         if (mounted) {
           setState(() {
             availableSttLocales = locales.map((l) => l.localeId).toSet();
@@ -197,29 +204,71 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!sttLocalesLoaded) return false;
     final normalizedLocale = normalizeLocale(localeCode);
     final langOnly = normalizedLocale.split('-').first;
-    return availableSttLocales.any((locale) {
-      final normalizedAvailable = normalizeLocale(locale);
-      return normalizedAvailable == normalizedLocale ||
-          normalizedAvailable.split('-').first == langOnly;
+    print('isSttLocaleSupported: checking "$localeCode" -> normalized="$normalizedLocale" langOnly="$langOnly"');
+    print('  available locales: $availableSttLocales');
+    final result = availableSttLocales.any((locale) {
+      final n = normalizeLocale(locale);
+      return n == normalizedLocale ||
+          n.split('-').first == langOnly ||
+          n.startsWith(langOnly);
     });
+    // English always has a chance — even if only en-US is available
+    final englishFallback = langOnly == 'en' &&
+        availableSttLocales.any((l) => normalizeLocale(l).startsWith('en'));
+    final finalResult = result || englishFallback;
+    print('  result: $finalResult (raw=$result, englishFallback=$englishFallback)');
+    return finalResult;
   }
 
   String getSttLocale(String localeCode) {
+    if (availableSttLocales.isEmpty) return localeCode;
+
     final normalizedLocale = normalizeLocale(localeCode);
     final langOnly = normalizedLocale.split('-').first;
-    final match = availableSttLocales.firstWhere(
-      (locale) => normalizeLocale(locale) == normalizedLocale,
-      orElse: () => availableSttLocales.firstWhere(
-        (locale) => normalizeLocale(locale).split('-').first == langOnly,
-      ),
-    );
-    return match;
+    print('getSttLocale: looking for "$localeCode" -> normalized="$normalizedLocale" langOnly="$langOnly"');
+
+    // 1. Exact match
+    for (final locale in availableSttLocales) {
+      if (normalizeLocale(locale) == normalizedLocale) {
+        print('  exact match: "$locale"');
+        return locale;
+      }
+    }
+
+    // 2. Language-only match (e.g. "en" matches "en-US")
+    for (final locale in availableSttLocales) {
+      if (normalizeLocale(locale).split('-').first == langOnly) {
+        print('  lang-only match: "$locale"');
+        return locale;
+      }
+    }
+
+    // 3. Prefix match — any locale starting with the language code
+    for (final locale in availableSttLocales) {
+      if (normalizeLocale(locale).startsWith(langOnly)) {
+        print('  prefix match: "$locale"');
+        return locale;
+      }
+    }
+
+    // 4. Last resort — if English requested, use any "en" locale
+    if (langOnly == 'en') {
+      for (final locale in availableSttLocales) {
+        if (normalizeLocale(locale).startsWith('en')) {
+          print('  english fallback: "$locale"');
+          return locale;
+        }
+      }
+    }
+
+    print('  NO MATCH FOUND — returning localeCode as-is');
+    return normalizedLocale;
   }
 
   Future<void> startListening() async {
     if (!speechAvailable) return;
 
-    if (!isSttLocaleSupported(selectedLanguage)) {
+    if (!kIsWeb && !isSttLocaleSupported(selectedLanguage)) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -500,7 +549,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 style: TextStyle(fontSize: 12, color: AgriMitraColors.critical),
               ),
             ),
-          if (speechAvailable && sttLocalesLoaded && !isSttLocaleSupported(selectedLanguage))
+          if (!kIsWeb && speechAvailable && sttLocalesLoaded && !isSttLocaleSupported(selectedLanguage))
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
