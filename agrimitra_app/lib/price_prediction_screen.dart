@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
@@ -79,8 +78,9 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.image,
+        withData: true,
       );
-      if (result != null && result.files.single.path != null) {
+      if (result != null && result.files.single.bytes != null) {
         setState(() => _pickedImage = result.files.single);
       }
     } catch (e) {
@@ -199,10 +199,24 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
       request.fields['date'] =
           DateTime.now().toIso8601String().substring(0, 10);
 
-      if (_pickedImage?.path != null) {
-        request.files
-            .add(await http.MultipartFile.fromPath('image', _pickedImage!.path!));
+      if (_pickedImage?.bytes != null) {
+        request.files.add(http.MultipartFile.fromBytes(
+          'image',
+          _pickedImage!.bytes!,
+          filename: _pickedImage!.name,
+        ));
       }
+
+      // Diagnostic: confirm exactly what is being sent before the request goes out.
+      debugPrint(
+        '[Price] Sending predict-price: '
+        'pickedImage=${_pickedImage != null} '
+        'bytesPresent=${_pickedImage?.bytes != null} '
+        'byteLen=${_pickedImage?.bytes?.length} '
+        'filesAttached=${request.files.length} '
+        'contentType=${request.headers['content-type'] ?? "multipart/form-data (auto)"} '
+        'fields=${request.fields.keys}',
+      );
 
       final streamed = await request.send().timeout(const Duration(seconds: 30));
       final response = await http.Response.fromStream(streamed);
@@ -768,11 +782,11 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
               color: AgriMitraColors.primaryLight,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: _pickedImage != null
+            child: _pickedImage != null && _pickedImage!.bytes != null
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(12),
-                    child: Image.file(
-                      File(_pickedImage!.path!),
+                    child: Image.memory(
+                      _pickedImage!.bytes!,
                       fit: BoxFit.cover,
                       errorBuilder: (_, _, _) => const Icon(
                         Icons.image_outlined,
