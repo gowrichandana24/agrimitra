@@ -306,6 +306,17 @@ def predict_price():
             location = request.form.get('location', '').strip()
             date = request.form.get('date', '').strip()
             image_file = request.files.get('image')
+            # Diagnostic logging: confirm whether an image actually arrived
+            if image_file is not None:
+                payload = image_file.stream.read()
+                print(
+                    f"[predict-price] IMAGE RECEIVED: field={image_file.name} "
+                    f"filename={image_file.filename} "
+                    f"content_type={image_file.mimetype} bytes={len(payload)}"
+                )
+                image_file.stream.seek(0)
+            else:
+                print("[predict-price] NO IMAGE received (field 'image' missing)")
         else:
             data = request.get_json() or {}
             crop = data.get('crop', '').strip()
@@ -313,11 +324,12 @@ def predict_price():
             date = data.get('date', '').strip()
             image_file = None
 
-        # Validate required fields
-        if not crop:
-            return jsonify({'error': 'Missing required field: crop'}), 400
+        # Location is always required. Crop may be omitted ONLY when an image
+        # is provided, so image detection can fill it in.
         if not location:
             return jsonify({'error': 'Missing required field: location'}), 400
+        if not crop and not image_file:
+            return jsonify({'error': 'Missing required field: crop'}), 400
 
         # Default date to today if not provided
         if not date:
@@ -336,7 +348,19 @@ def predict_price():
                 image_detected_crop = detected
                 image_confidence = round(confidence, 4)
 
-                if confidence >= 0.65 and detected.lower() != crop.lower():
+                if not crop:
+                    # No manual crop selection — detection found a crop.
+                    # Ask the farmer to confirm before proceeding to pricing.
+                    return jsonify({
+                        'needs_confirmation': True,
+                        'image_detected_crop': detected,
+                        'image_confidence': image_confidence,
+                        'note': (
+                            f"Image detected: {detected} ({confidence:.0%} confidence). "
+                            "Should we use this as the crop for pricing?"
+                        )
+                    })
+                elif confidence >= 0.65 and detected.lower() != crop.lower():
                     # High confidence — override farmer's selection
                     note = (
                         f"Image detected: {detected} ({confidence:.0%} confidence) "
@@ -357,7 +381,9 @@ def predict_price():
                     note = "Image unclear — using your selected crop"
             else:
                 # Model returned nothing (very low confidence or error)
-                note = "Image unclear — using your selected crop"
+                note = ("Image unclear — could not identify the crop"
+                        if not crop
+                        else "Image unclear — using your selected crop")
 
         # Get price estimate
         price_estimate = get_price_estimate(crop, location, date)

@@ -30,6 +30,11 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
   Map<String, dynamic>? _forecast;
   bool _isLoadingHistory = false;
 
+  // Confirmation dialog state
+  String? _pendingDetectedCrop;
+  double? _pendingConfidence;
+  bool _showConfirmation = false;
+
   static const _priceServiceUrl = 'http://localhost:5002';
 
   static const _monthNames = [
@@ -167,8 +172,8 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
   Future<void> _getPriceEstimate() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (_selectedCrop == null) {
-      _showSnackBar('Please select a crop');
+    if (_selectedCrop == null && _pickedImage == null) {
+      _showSnackBar('Please select a crop or upload an image of your produce');
       return;
     }
     if (_selectedState == null) {
@@ -194,7 +199,7 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
         Uri.parse('$_priceServiceUrl/predict-price'),
       );
 
-      request.fields['crop'] = _selectedCrop!;
+      request.fields['crop'] = _selectedCrop ?? '';
       request.fields['location'] = locationText;
       request.fields['date'] =
           DateTime.now().toIso8601String().substring(0, 10);
@@ -225,11 +230,36 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        setState(() {
-          _result = data as Map<String, dynamic>;
-          _isSubmitting = false;
-        });
-        await _fetchForecast();
+        // Check if backend needs crop confirmation
+        if (data['needs_confirmation'] == true) {
+          setState(() {
+            _isSubmitting = false;
+            _pendingDetectedCrop = data['image_detected_crop']?.toString();
+            _pendingConfidence = (data['image_confidence'] as num?)?.toDouble();
+            _showConfirmation = true;
+          });
+          // Show the confirmation dialog after the frame renders
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_showConfirmation) _showCropConfirmationDialog();
+          });
+        } else {
+          setState(() {
+            _result = data as Map<String, dynamic>;
+            _isSubmitting = false;
+            // If the backend detected a crop from the image and no manual crop
+            // was selected, populate the dropdown so the farmer SEES it.
+            // Only when the detected name is one of the 36 known options;
+            // otherwise the result card still shows it via crop_used.
+            final detected = _result!['image_detected_crop']?.toString();
+            if ((_selectedCrop == null || _selectedCrop!.isEmpty) &&
+                detected != null &&
+                detected.isNotEmpty &&
+                _crops.contains(detected)) {
+              _selectedCrop = detected;
+            }
+          });
+          await _fetchForecast();
+        }
       } else {
         String msg;
         try {
@@ -247,6 +277,75 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
       setState(() => _isSubmitting = false);
       _showSnackBar('Price service unavailable');
     }
+  }
+
+  Future<void> _handleConfirmation(bool confirm) async {
+    if (!confirm) {
+      setState(() => _showConfirmation = false);
+      return;
+    }
+
+    final detected = _pendingDetectedCrop;
+    if (detected == null) return;
+
+    setState(() {
+      _selectedCrop = detected;
+      _showConfirmation = false;
+      _pendingDetectedCrop = null;
+      _pendingConfidence = null;
+    });
+
+    await _getPriceEstimate();
+  }
+
+  Future<void> _showCropConfirmationDialog() async {
+    if (!mounted) return;
+    final detected = _pendingDetectedCrop;
+    final confidence = _pendingConfidence;
+    if (detected == null || confidence == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Confirm Crop Detection',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'We think this is $detected (${(confidence * 100).toStringAsFixed(0)}% confidence).',
+              style: const TextStyle(fontSize: 16),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Is this correct?',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop(false);
+            },
+            child: const Text('No, let me choose'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop(true);
+            },
+            child: const Text('Yes, use this'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != null) _handleConfirmation(confirm);
   }
 
   @override
@@ -275,6 +374,9 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
                 ),
                 const SizedBox(height: 24),
                 DropdownButtonFormField<String>(
+                  key: ValueKey(
+                    'crop-${_selectedCrop ?? ''}',
+                  ),
                   initialValue: _selectedCrop,
                   decoration: const InputDecoration(
                     labelText: 'Crop',
@@ -284,7 +386,8 @@ class _PricePredictionScreenState extends State<PricePredictionScreen> {
                       .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                       .toList(),
                   onChanged: (v) => setState(() => _selectedCrop = v),
-                  validator: (v) => v == null ? 'Please select a crop' : null,
+                  validator: (v) =>
+                      (v == null && _pickedImage == null) ? 'Please select a crop' : null,
                 ),
                 const SizedBox(height: 16),
                 _buildLocationSelectors(),
